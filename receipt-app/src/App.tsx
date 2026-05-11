@@ -25,6 +25,14 @@ function App() {
     setIsUnlocked(true);
   }, [setIsUnlocked]);
 
+  const handleLogout = useCallback(() => {
+    setIsUnlocked(false);
+    setCapturedFile(null);
+    capturedFileRef.current = null;
+    reset();
+    setView('capture');
+  }, [setIsUnlocked, reset]);
+
   const handleCapture = useCallback((file: File) => {
     setCapturedFile(file);
     capturedFileRef.current = file;
@@ -83,7 +91,7 @@ function App() {
 
   return (
     <div className="flex min-h-svh flex-col bg-background">
-      <Header />
+      <Header onLogout={handleLogout} />
       <Toaster position="top-center" richColors closeButton />
 
       <main className="mx-auto w-full max-w-lg flex-1 px-4 py-5">
