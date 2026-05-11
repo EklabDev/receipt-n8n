@@ -1,6 +1,7 @@
 import type { Receipt, ExtractedReceipt } from '@/types/receipt';
 
-const WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL;
+/** Public n8n webhook URL (from env); safe to show in the UI after PIN unlock. */
+export const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL as string | undefined;
 const API_KEY = import.meta.env.VITE_N8N_API_KEY;
 
 export interface SubmitReceiptResponse {
@@ -14,7 +15,7 @@ export interface SubmitReceiptResponse {
  * Sends as multipart/form-data with API key auth header.
  */
 export async function submitReceipt(imageFile: File): Promise<SubmitReceiptResponse> {
-  if (!WEBHOOK_URL) {
+  if (!N8N_WEBHOOK_URL) {
     throw new Error('N8N webhook URL not configured');
   }
 
@@ -28,7 +29,7 @@ export async function submitReceipt(imageFile: File): Promise<SubmitReceiptRespo
     })
   );
 
-  const response = await fetch(WEBHOOK_URL, {
+  const response = await fetch(N8N_WEBHOOK_URL, {
     method: 'POST',
     headers: {
       'x-api-key': API_KEY || '',

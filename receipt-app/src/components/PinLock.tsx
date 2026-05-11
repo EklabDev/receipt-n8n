@@ -138,8 +138,12 @@ export function PinLock({ onUnlock }: PinLockProps) {
             <div key={i} className="relative">
               <input
                 ref={(el) => { inputRefs.current[i] = el; }}
-                type="tel"
-                inputMode="numeric"
+                type="text"
+                inputMode="none"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
                 maxLength={1}
                 value={digit}
                 onChange={(e) => handleDigitChange(i, e.target.value)}
