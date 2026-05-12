@@ -1,0 +1,554 @@
+{
+  "name": "Receipt Scanner",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "receipt",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "af2bbfc3-d80e-4ed8-8bef-643bd6458bad",
+      "name": "Webhook - Receive Receipt",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        80
+      ],
+      "webhookId": "receipt-scanner-webhook",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "o90kkLJZ1Wsqy6bT",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "text": "You are a receipt analysis assistant. Analyze the receipt image and extract the following information:\n\n1. vendor_name: The store/business name\n2. date: Transaction date in ISO 8601 format (YYYY-MM-DD)\n3. total: Total amount paid (number only, no currency symbol)\n4. tax: Tax amount (number, 0 if not visible)\n5. currency: Currency code (e.g., CAD, USD)\n6. category: Best-fit category from: [\"Office Supplies\", \"Travel\", \"Meals & Entertainment\", \"Software & Subscriptions\", \"Hardware & Equipment\", \"Professional Services\", \"Utilities\", \"Transportation\", \"Other\"]\n7. items: Array of objects with {description, amount, quantity}\n8. confidence: Your confidence level from 0.0 to 1.0\n\nReturn ONLY valid JSON with these exact field names. If a field cannot be determined, use null for strings and 0 for numbers.",
+        "inputType": "base64",
+        "binaryPropertyName": "image",
+        "options": {}
+      },
+      "id": "0d313097-6e27-4884-96cb-63b0c16900b7",
+      "name": "OpenAI - Analyze Receipt",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -512,
+        0
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "B3kN1v1cXyyY0yhI",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the OpenAI response and format for Google Sheets + Drive\nconst openAiResponse = $input.first().json;\nlet parsed;\n\ntry {\n  // The response might be in message.content or directly in the output\n  const content = openAiResponse.content || openAiResponse.text || JSON.stringify(openAiResponse);\n  \n  // Extract JSON from potential markdown code blocks\n  const jsonMatch = content.match(/```json?\\n?([\\s\\S]*?)\\n?```/) || [null, content];\n  parsed = JSON.parse(jsonMatch[1].trim());\n} catch (e) {\n  throw new Error(`Failed to parse OpenAI response: ${e.message}`);\n}\n\n// Build items summary string for the sheet\nconst itemsSummary = (parsed.items || [])\n  .map(item => {\n    const qty = item.quantity && item.quantity > 1 ? `${item.quantity}× ` : '';\n    return `${qty}${item.description}: $${item.amount}`;\n  })\n  .join('; ');\n\n// Generate Drive filename\nconst vendor = (parsed.vendor_name || 'unknown').replace(/[^a-zA-Z0-9]/g, '_');\nconst date = parsed.date || new Date().toISOString().split('T')[0];\nconst filename = `receipt_${vendor}_${date}_${Date.now()}.jpg`;\n\nreturn [\n  {\n    json: {\n      // For Google Sheets\n      sheetData: {\n        date: parsed.date,\n        vendor: parsed.vendor_name,\n        category: parsed.category,\n        total: parsed.total,\n        tax: parsed.tax,\n        currency: parsed.currency,\n        items: itemsSummary,\n        confidence: parsed.confidence,\n        submittedAt: new Date().toISOString()\n      },\n      // For Google Drive\n      driveFilename: filename,\n      // For response\n      extractedData: {\n        vendor: parsed.vendor_name,\n        date: parsed.date,\n        total: parsed.total,\n        tax: parsed.tax,\n        currency: parsed.currency,\n        category: parsed.category,\n        items: parsed.items || [],\n        confidence: parsed.confidence\n      }\n    },\n    // Pass through the binary data for Drive upload\n  }\n];"
+      },
+      "id": "90c7921d-704f-4ef9-928d-1470660d2a35",
+      "name": "Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0",
+          "mode": "list",
+          "cachedResultName": "Receipt",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{$('Format Data').first().json.sheetData.date }}",
+            "Vendor": "={{ $('Format Data').first().json.sheetData.vendor }}",
+            "Category": "={{ $('Format Data').first().json.sheetData.category }}",
+            "Total": "={{ $('Format Data').first().json.sheetData.total }}",
+            "Tax": "={{ $('Format Data').first().json.sheetData.tax }}",
+            "Currency": "={{ $('Format Data').first().json.sheetData.currency }}",
+            "Items": "={{ $('Format Data').first().json.sheetData.items }}",
+            "Image Link": "={{ $('Format Data').first().json.driveLink || '' }}",
+            "Confidence": "={{ $('Format Data').first().json.sheetData.confidence }}",
+            "Submitted At": "={{ $('Format Data').first().json.sheetData.submittedAt }}",
+            "link": "={{ $('Google Drive - Upload Image').item.json.webViewLink }}"
+          },
+          "matchingColumns": [
+            "Submitted At"
+          ],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Vendor",
+              "displayName": "Vendor",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Total",
+              "displayName": "Total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tax",
+              "displayName": "Tax",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Currency",
+              "displayName": "Currency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Items",
+              "displayName": "Items",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Image Link",
+              "displayName": "Image Link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Confidence",
+              "displayName": "Confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Submitted At",
+              "displayName": "Submitted At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "link",
+              "displayName": "link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "19f2932d-e2d2-495f-a0a0-910f4d0250d2",
+      "name": "Google Sheets - Append Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1040,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qjcRKIDLVJUxwBME",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "image",
+        "name": "={{ $('Format Data').first().json.driveFilename }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1_xZgUpeBfa4BOPBS-6289_nmcnpYOR9d",
+          "mode": "list",
+          "cachedResultName": "2026",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1_xZgUpeBfa4BOPBS-6289_nmcnpYOR9d"
+        },
+        "options": {}
+      },
+      "id": "5c98b34c-8b58-44c8-9be5-3ccd28fe4526",
+      "name": "Google Drive - Upload Image",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        384,
+        144
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "A8Dr9s98enWRLW98",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge Google Drive link into the response\nconst formatData = $('Format Data').first().json;\nconst driveResult = $('Google Drive - Upload Image').first().json;\nconst sheetsResult = $('Google Sheets - Append Row').first().json;\n\nconst driveLink = driveResult.webViewLink || driveResult.webContentLink || '';\n\nreturn [\n  {\n    json: {\n      success: true,\n      data: {\n        ...formatData.extractedData,\n        driveLink: driveLink,\n        sheetRow: sheetsResult.updates?.updatedRows || null\n      }\n    }\n  }\n];"
+      },
+      "id": "beb5473c-d0ca-4ed2-9484-70954bcae61b",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1488,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "77dcdf71-605d-478d-8757-c8f5a58f886c",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1712,
+        80
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1264,
+        80
+      ],
+      "id": "d3060d11-71bd-44c0-aad7-573fb31b5802",
+      "name": "Merge"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -64,
+        144
+      ],
+      "id": "52339bdd-0728-40c1-9012-1a05edbe06c2",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {}
+          ]
+        },
+        "options": {
+          "includeBinaries": true
+        }
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        160,
+        144
+      ],
+      "id": "28a335d4-9a82-4c60-a7fe-231c582130c8",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        608,
+        0
+      ],
+      "id": "a89f3dbc-4d3d-47c8-acf3-753350eabf38",
+      "name": "Merge2"
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        816,
+        0
+      ],
+      "id": "c4feca15-f455-463a-af3a-39528e38de51",
+      "name": "Aggregate1"
+    }
+  ],
+  "pinData": {
+    "Format Data": [
+      {
+        "json": {
+          "sheetData": {
+            "date": null,
+            "vendor": null,
+            "category": "Other",
+            "total": 0,
+            "tax": 0,
+            "currency": null,
+            "items": "",
+            "confidence": 0,
+            "submittedAt": "2026-05-11T04:46:19.578Z"
+          },
+          "driveFilename": "receipt_unknown_2026-05-11_1778474779578.jpg",
+          "extractedData": {
+            "vendor": null,
+            "date": null,
+            "total": 0,
+            "tax": 0,
+            "currency": null,
+            "category": "Other",
+            "items": [],
+            "confidence": 0
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook - Receive Receipt": {
+      "main": [
+        [
+          {
+            "node": "OpenAI - Analyze Receipt",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "OpenAI - Analyze Receipt": {
+      "main": [
+        [
+          {
+            "node": "Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Data": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Append Row": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive - Upload Image": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Google Drive - Upload Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge2": {
+      "main": [
+        [
+          {
+            "node": "Aggregate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate1": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Append Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "1f701602-f403-490c-bb40-4ac81c4105a2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8db90a53deb80842662d3387b648240ddb9fed5608e8664389c2d2742164a186"
+  },
+  "id": "_Af3IwMpbGsi1fX-v3aNo",
+  "tags": [
+    {
+      "updatedAt": "2026-05-10T18:27:16.192Z",
+      "createdAt": "2026-05-10T18:27:16.192Z",
+      "id": "xgZn4KJ24x5s4KQ3",
+      "name": "receipt-scanner"
+    }
+  ]
+}
