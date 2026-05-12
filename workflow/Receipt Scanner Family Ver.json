@@ -1,0 +1,544 @@
+{
+  "name": "Receipt Scanner Family",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "receipt",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "af2bbfc3-d80e-4ed8-8bef-643bd6458bad",
+      "name": "Webhook - Receive Receipt",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        80
+      ],
+      "webhookId": "receipt-scanner-webhook",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "o90kkLJZ1Wsqy6bT",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "text": "You are a receipt analysis assistant for a family expense workbook named Living Expense <YEAR>. Analyze the receipt image and return ONLY valid JSON.\n\nExtract:\n1. date: Transaction date in ISO 8601 (YYYY-MM-DD).\n2. vendor_name: Store or business name if visible (for your reasoning; not a sheet column).\n3. total: Total amount as a number only (no currency symbol).\n4. currency: Three-letter code (e.g. CAD, USD). If unclear, use CAD.\n5. category: EXACTLY one string from this closed list (best fit; if unsure use \"Miscellaneous\"):\n[\"Amazon\", \"Body Care\", \"Car\", \"Clothes & Shoes\", \"Dental\", \"Drink\", \"Electricity & Water\", \"Entertainment\", \"Food\", \"Gardening\", \"Gas\", \"Gift\", \"Grocery\", \"Health\", \"House Moving\", \"House Rent\", \"IKEA\", \"Insurance\", \"Internet\", \"Medicine\", \"Membership\", \"Miscellaneous\", \"Mobile\", \"Penalty\", \"Pet\", \"PR\", \"Refund\", \"Sports\", \"Tax\", \"Tools\", \"Transport\", \"Travel\", \"Wedding\"]\n6. payment_method: EXACTLY one of the following strings, matching card/network text and last 4 digits on the receipt when possible. If you cannot match, use null.\n- AMEX Marriott Bonvoy - 0771\n- AMEX Marriott Bonvoy - 2593\n- AMEX Marriott Bonvoy - 2018\n- AMEX Marriott Bonvoy - 1002\n- BMO Business Debit - 1705\n- BMO Debit - 7035\n- BMO Post-dated Cheque\n- Cash\n- CIBC Costco Mastercard - 5140\n- CIBC Costco Mastercard - 0486\n- CIBC Debit\n- CIBC Pre-Authorized\n- HSBC World Debit - 7418\n- HSBC World Debit - 7698\n- HSBC World Debit - 8955\n- HSBC World Debit - 6315\n- Interac\n- NEO World Elite Mastercard - 5002\n- NEO World Elite Mastercard - 2033\n- PC Optimum Mastercard - 7107\n- PC Optimum Mastercard - 5520\n- RBC Cashback Mastercard - 4894\n- RBC Cashback Mastercard - 0154\n- RBC Debit\n- Rogers Business Mastercard - 8887\n- Rogers Business Mastercard - 3072\n- Scotia Visa - 8548\n- Triangle Mastercard - 2562\n7. items: Array of objects { \"description\", \"amount\", \"quantity\" } for line items when visible; otherwise [].\n8. remarks: Brief text for anything relevant that does not fit elsewhere (e.g. unclear card, split bill, missing line items).\n9. confidence: Your confidence from 0.0 to 1.0.\n\nRules:\n- category must be one of the listed values only.\n- payment_method must exactly match one of the allowed strings or be null.\n- total should reflect the paid amount; prefer CAD when the receipt is in CAD.\n\nReturn ONLY JSON with these exact keys: date, vendor_name, total, currency, category, payment_method, items, remarks, confidence. Use null for unknown strings; use 0 for confidence only if the image is unreadable.",
+        "inputType": "base64",
+        "binaryPropertyName": "image",
+        "options": {}
+      },
+      "id": "0d313097-6e27-4884-96cb-63b0c16900b7",
+      "name": "OpenAI - Analyze Receipt",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -512,
+        0
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "B3kN1v1cXyyY0yhI",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Family Living Expense: parse OpenAI JSON, map payment -> Paid By, sheet tab MM-MMM, Drive filename\nconst openAiResponse = $input.first().json;\nlet parsed;\n\ntry {\n  const content = openAiResponse.content || openAiResponse.text || JSON.stringify(openAiResponse);\n  const jsonMatch = content.match(/```(?:json)?\\n?([\\s\\S]*?)\\n?```/) || [null, content];\n  parsed = JSON.parse(jsonMatch[1].trim());\n} catch (e) {\n  throw new Error(`Failed to parse OpenAI response: ${e.message}`);\n}\n\nconst PAYMENT_TO_PERSON = {\n  \"AMEX Marriott Bonvoy - 0771\": \"Eki\",\n  \"AMEX Marriott Bonvoy - 2593\": \"Eki\",\n  \"AMEX Marriott Bonvoy - 2018\": \"Eki\",\n  \"AMEX Marriott Bonvoy - 1002\": \"Eki\",\n  \"BMO Business Debit - 1705\": \"Kevard\",\n  \"BMO Debit - 7035\": \"Kevard\",\n  \"BMO Post-dated Cheque\": \"Kevard\",\n  \"Cash\": \"Eki\",\n  \"CIBC Costco Mastercard - 5140\": \"Kevard\",\n  \"CIBC Costco Mastercard - 0486\": \"Kevard\",\n  \"CIBC Debit\": \"Eki\",\n  \"CIBC Pre-Authorized\": \"Eki\",\n  \"HSBC World Debit - 7418\": \"Kevard\",\n  \"HSBC World Debit - 7698\": \"Kevard\",\n  \"HSBC World Debit - 8955\": \"Eki\",\n  \"HSBC World Debit - 6315\": \"Eki\",\n  \"Interac\": \"Eki\",\n  \"NEO World Elite Mastercard - 5002\": \"Kevard\",\n  \"NEO World Elite Mastercard - 2033\": \"Kevard\",\n  \"PC Optimum Mastercard - 7107\": \"Kevard\",\n  \"PC Optimum Mastercard - 5520\": \"Kevard\",\n  \"RBC Cashback Mastercard - 4894\": \"Eki\",\n  \"RBC Cashback Mastercard - 0154\": \"Eki\",\n  \"RBC Debit\": \"Eki\",\n  \"Rogers Business Mastercard - 8887\": \"Kevard\",\n  \"Rogers Business Mastercard - 3072\": \"Kevard\",\n  \"Scotia Visa - 8548\": \"Kevard\",\n  \"Triangle Mastercard - 2562\": \"Kevard\"\n};\n\nconst ALLOWED_CATEGORIES = new Set([\"Amazon\", \"Body Care\", \"Car\", \"Clothes & Shoes\", \"Dental\", \"Drink\", \"Electricity & Water\", \"Entertainment\", \"Food\", \"Gardening\", \"Gas\", \"Gift\", \"Grocery\", \"Health\", \"House Moving\", \"House Rent\", \"IKEA\", \"Insurance\", \"Internet\", \"Medicine\", \"Membership\", \"Miscellaneous\", \"Mobile\", \"Penalty\", \"Pet\", \"PR\", \"Refund\", \"Sports\", \"Tax\", \"Tools\", \"Transport\", \"Travel\", \"Wedding\"]);\n\nfunction normalizeCategory(c) {\n  if (c && ALLOWED_CATEGORIES.has(c)) return c;\n  return 'Miscellaneous';\n}\n\nconst details = (parsed.items || [])\n  .map((item) => {\n    const qty = item.quantity && item.quantity > 1 ? `${item.quantity}x ` : '';\n    const desc = item.description || '';\n    const amt = item.amount != null && item.amount !== '' ? ` (${item.amount})` : '';\n    return `${qty}${desc}${amt}`;\n  })\n  .filter(Boolean)\n  .join('; ');\n\nconst iso = parsed.date || new Date().toISOString().split('T')[0];\nconst parts = iso.split('-');\nconst y = parts[0] || String(new Date().getFullYear());\nconst m = parts[1] || '01';\nconst dayRaw = parts[2] || '01';\nconst day = String(parseInt(dayRaw, 10)).padStart(2, '0');\n\nconst monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];\nconst mmm = monthNames[Math.max(0, Math.min(11, parseInt(m, 10) - 1))];\nconst mm = String(Math.max(1, Math.min(12, parseInt(m, 10)))).padStart(2, '0');\nconst sheetName = `${mm}-${mmm}`;\n\nlet amountCad = Number(parsed.total);\nif (Number.isNaN(amountCad)) amountCad = 0;\nconst cur = (parsed.currency || 'CAD').toUpperCase();\nconst remarkParts = [];\nif (parsed.remarks) remarkParts.push(String(parsed.remarks).trim());\n\nif (cur !== 'CAD') {\n  remarkParts.push(`Non-CAD receipt (${cur}); verify Amount (CAD).`);\n}\n\nconst pm = parsed.payment_method != null ? String(parsed.payment_method).trim() : '';\nlet paidBy = pm && PAYMENT_TO_PERSON[pm] ? PAYMENT_TO_PERSON[pm] : '';\nif (pm && !paidBy) {\n  remarkParts.push(`Unknown payment_method \"${pm}\" \u2014 set Paid By manually.`);\n}\n\nconst category = normalizeCategory(parsed.category);\nconst vendor = (parsed.vendor_name || 'receipt').replace(/[^\\w\\s-]/g, '').replace(/\\s+/g, ' ').trim().slice(0, 80) || 'receipt';\nconst driveFilename = `Living Expense ${y} - ${iso} - ${vendor.replace(/\\s/g, '_')}.jpg`;\n\nconst submittedAt = new Date().toISOString();\n\nreturn [\n  {\n    json: {\n      sheetName,\n      sheetData: {\n        day,\n        category,\n        details,\n        paidBy,\n        paymentMethod: pm,\n        amountCad,\n        remarks: remarkParts.filter(Boolean).join(' ').trim(),\n        submittedAt,\n      },\n      driveFilename,\n      extractedData: {\n        vendor: parsed.vendor_name,\n        date: iso,\n        day,\n        sheetName,\n        category,\n        details,\n        paidBy,\n        paymentMethod: pm,\n        amountCad,\n        currency: cur,\n        remarks: remarkParts.join(' ').trim(),\n        items: parsed.items || [],\n        confidence: parsed.confidence,\n        submittedAt,\n      },\n    },\n  },\n];\n"
+      },
+      "id": "90c7921d-704f-4ef9-928d-1470660d2a35",
+      "name": "Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0",
+          "mode": "list",
+          "cachedResultName": "Receipt",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Format Data').first().json.sheetName }}",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Day": "={{ $('Format Data').first().json.sheetData.day }}",
+            "Category": "={{ $('Format Data').first().json.sheetData.category }}",
+            "Details": "={{ $('Format Data').first().json.sheetData.details }}",
+            "Paid By": "={{ $('Format Data').first().json.sheetData.paidBy }}",
+            "Payment Method": "={{ $('Format Data').first().json.sheetData.paymentMethod }}",
+            "Amount (CAD)": "={{ $('Format Data').first().json.sheetData.amountCad }}",
+            "Remarks": "={{ $('Format Data').first().json.sheetData.remarks }}",
+            "Submitted At": "={{ $('Format Data').first().json.sheetData.submittedAt }}",
+            "link": "={{ $('Google Drive - Upload Image').item.json.webViewLink }}"
+          },
+          "matchingColumns": [
+            "Submitted At"
+          ],
+          "schema": [
+            {
+              "id": "Day",
+              "displayName": "Day",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Details",
+              "displayName": "Details",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Paid By",
+              "displayName": "Paid By",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Payment Method",
+              "displayName": "Payment Method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Amount (CAD)",
+              "displayName": "Amount (CAD)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Remarks",
+              "displayName": "Remarks",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Submitted At",
+              "displayName": "Submitted At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "link",
+              "displayName": "link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "19f2932d-e2d2-495f-a0a0-910f4d0250d2",
+      "name": "Google Sheets - Append Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1040,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qjcRKIDLVJUxwBME",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "image",
+        "name": "={{ $('Format Data').first().json.driveFilename }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1_xZgUpeBfa4BOPBS-6289_nmcnpYOR9d",
+          "mode": "list",
+          "cachedResultName": "2026",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1_xZgUpeBfa4BOPBS-6289_nmcnpYOR9d"
+        },
+        "options": {}
+      },
+      "id": "5c98b34c-8b58-44c8-9be5-3ccd28fe4526",
+      "name": "Google Drive - Upload Image",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        384,
+        144
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "A8Dr9s98enWRLW98",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge Google Drive link into the response\nconst formatData = $('Format Data').first().json;\nconst driveResult = $('Google Drive - Upload Image').first().json;\nconst sheetsResult = $('Google Sheets - Append Row').first().json;\n\nconst driveLink = driveResult.webViewLink || driveResult.webContentLink || '';\n\nreturn [\n  {\n    json: {\n      success: true,\n      data: {\n        ...formatData.extractedData,\n        driveLink: driveLink,\n        sheetRow: sheetsResult.updates?.updatedRows || null\n      }\n    }\n  }\n];"
+      },
+      "id": "beb5473c-d0ca-4ed2-9484-70954bcae61b",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1488,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "77dcdf71-605d-478d-8757-c8f5a58f886c",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1712,
+        80
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1264,
+        80
+      ],
+      "id": "d3060d11-71bd-44c0-aad7-573fb31b5802",
+      "name": "Merge"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -64,
+        144
+      ],
+      "id": "52339bdd-0728-40c1-9012-1a05edbe06c2",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {}
+          ]
+        },
+        "options": {
+          "includeBinaries": true
+        }
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        160,
+        144
+      ],
+      "id": "28a335d4-9a82-4c60-a7fe-231c582130c8",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        608,
+        0
+      ],
+      "id": "a89f3dbc-4d3d-47c8-acf3-753350eabf38",
+      "name": "Merge2"
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        816,
+        0
+      ],
+      "id": "c4feca15-f455-463a-af3a-39528e38de51",
+      "name": "Aggregate1"
+    }
+  ],
+  "pinData": {
+    "Format Data": [
+      {
+        "json": {
+          "sheetName": "05-May",
+          "sheetData": {
+            "day": "11",
+            "category": "Grocery",
+            "details": "Milk (4.99)",
+            "paidBy": "Eki",
+            "paymentMethod": "Interac",
+            "amountCad": 24.5,
+            "remarks": "",
+            "submittedAt": "2026-05-11T04:46:19.578Z"
+          },
+          "driveFilename": "Living Expense 2026 - 2026-05-11 - Costco.jpg",
+          "extractedData": {
+            "vendor": "Costco",
+            "date": "2026-05-11",
+            "day": "11",
+            "sheetName": "05-May",
+            "category": "Grocery",
+            "details": "Milk (4.99)",
+            "paidBy": "Eki",
+            "paymentMethod": "Interac",
+            "amountCad": 24.5,
+            "currency": "CAD",
+            "remarks": "",
+            "items": [
+              {
+                "description": "Milk",
+                "amount": 4.99,
+                "quantity": 1
+              }
+            ],
+            "confidence": 0.9,
+            "submittedAt": "2026-05-11T04:46:19.578Z"
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook - Receive Receipt": {
+      "main": [
+        [
+          {
+            "node": "OpenAI - Analyze Receipt",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "OpenAI - Analyze Receipt": {
+      "main": [
+        [
+          {
+            "node": "Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Data": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Append Row": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive - Upload Image": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Merge2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Google Drive - Upload Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge2": {
+      "main": [
+        [
+          {
+            "node": "Aggregate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate1": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Append Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "1f701602-f403-490c-bb40-4ac81c4105a2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8db90a53deb80842662d3387b648240ddb9fed5608e8664389c2d2742164a186"
+  },
+  "id": "_Af3IwMpbGsi1fX-v3aNo",
+  "tags": [
+    {
+      "updatedAt": "2026-05-10T18:27:16.192Z",
+      "createdAt": "2026-05-10T18:27:16.192Z",
+      "id": "xgZn4KJ24x5s4KQ3",
+      "name": "receipt-scanner"
+    }
+  ]
+}
