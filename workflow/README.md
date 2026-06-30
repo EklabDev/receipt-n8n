@@ -2,94 +2,170 @@
 
 ## Overview
 
-The `receipt-scanner.json` workflow processes receipt images submitted from the PWA frontend.
+This directory contains n8n workflow exports for the receipt stack:
 
-## Flow
+| Workflow | File | Webhook |
+|----------|------|---------|
+| Receipt Scanner (PWA upload) | `Receipt Scanner.json` | `POST /receipt` |
+| Gmail Bill Scanner — Limit (50) | `Gmail Bill Scanner - Limit.json` | `POST /gmail-bills/limit` |
+| Gmail Bill Scanner — All | `Gmail Bill Scanner - All.json` | `POST /gmail-bills/all` |
+
+All webhooks use **Header Auth** (`x-api-key` header, same key as `RECEIPT_API_KEY`).
+
+---
+
+## Receipt Scanner
+
+The `Receipt Scanner.json` workflow processes receipt images submitted from the PWA frontend.
+
+### Flow
 
 ```
 Webhook (POST /receipt)
-  → Check API Key (x-api-key header)
-    → ✅ Valid: OpenAI Vision (GPT-4o) → Format Data → Google Sheets + Google Drive → Respond 200
-    → ❌ Invalid: Respond 401
+  → OpenAI Vision (GPT-4o-mini) → Format Data → Google Sheets + Google Drive → Respond 200
 ```
 
-## Setup Instructions
+### Setup
 
-### 1. Import the Workflow
+1. Import `Receipt Scanner.json`
+2. Bind credentials: OpenAI, Google OAuth2 (Sheets + Drive), Header Auth
+3. Confirm Sheet ID `16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0` and Drive folder `1_xZgUpeBfa4BOPBS-6289_nmcnpYOR9d` (or update to your own)
+4. Set `RECEIPT_API_KEY` in n8n env vars
+5. Activate and copy webhook URL to PWA `VITE_N8N_WEBHOOK_URL`
 
-1. Open your n8n instance
-2. Go to **Workflows → Import from File**
-3. Select `receipt-scanner.json`
-4. The workflow will be imported in inactive state
-
-### 2. Configure Environment Variables
-
-In your n8n instance, set the following environment variable:
-
-| Variable | Purpose |
-|----------|---------|
-| `RECEIPT_API_KEY` | API key that the PWA sends in the `x-api-key` header |
-
-### 3. Setup Credentials
-
-You need to create the following credentials in n8n:
-
-#### OpenAI API
-- Type: `OpenAI API`
-- Add your OpenAI API key
-- Assign to the "OpenAI - Analyze Receipt" node
-
-#### Google OAuth2
-- Type: `Google OAuth2 API`
-- Scopes needed:
-  - `https://www.googleapis.com/auth/spreadsheets`
-  - `https://www.googleapis.com/auth/drive.file`
-- Assign to both "Google Sheets" and "Google Drive" nodes
-
-### 4. Configure Google Sheet
-
-1. Create a new Google Sheet for tax receipts
-2. Add these column headers in Row 1:
-   - A: `Date`
-   - B: `Vendor`
-   - C: `Category`
-   - D: `Total`
-   - E: `Tax`
-   - F: `Currency`
-   - G: `Items`
-   - H: `Image Link`
-   - I: `Confidence`
-   - J: `Submitted At`
-3. Copy the Sheet ID from the URL
-4. Update the "Google Sheets - Append Row" node with your Sheet ID
-
-### 5. Configure Google Drive
-
-1. Create a folder in Google Drive for receipt images
-2. Copy the folder ID from the URL
-3. Update the "Google Drive - Upload Image" node with your folder ID
-
-### 6. Activate the Workflow
-
-1. Set the webhook to production mode
-2. Activate the workflow
-3. Copy the webhook URL for your PWA `.env` file
-
-## Testing
-
-Send a test request:
+### Test
 
 ```bash
 curl -X POST \
   https://your-n8n.example.com/webhook/receipt \
-  -H "x-api-key: your-api-key" \
-  -F "image=@receipt.jpg" \
-  -F 'metadata={"submittedAt":"2026-05-08T12:00:00Z","deviceInfo":"test"}'
+  -H "x-api-key: $RECEIPT_API_KEY" \
+  -F "image=@receipt.jpg"
 ```
 
-## Troubleshooting
+---
 
-- **401 errors**: Check that `RECEIPT_API_KEY` env var matches the key in your PWA `.env`
-- **OpenAI errors**: Verify your API key has access to GPT-4o with vision
-- **Google errors**: Ensure OAuth2 credentials have the correct scopes
-- **Binary data issues**: Make sure the webhook is receiving the file as `image` field
+## Gmail Bill Scanner
+
+Two workflows scan a **delegated Gmail mailbox** for messages in the **Purchases** category (`category:purchases`), dedupe by Gmail `internalDate`, analyze with OpenAI, upload PDFs to Drive, and append rows to the same expense sheet as Receipt Scanner.
+
+### Prerequisites
+
+Complete **before** importing workflows — see [`credentials/README.md`](../credentials/README.md):
+
+1. Google Service Account with **domain-wide delegation** and `gmail.readonly` scope
+2. n8n credential: **Google Service Account API** (upload JSON key in UI — never in workflow JSON)
+3. n8n env vars: `GMAIL_DELEGATED_USER`, `RECEIPT_API_KEY`
+4. Google Sheet columns: add `Email Timestamp` and `Transaction Type` headers (see credentials README)
+
+### Shared flow (both workflows)
+
+```
+Webhook
+  → Read sheet (Email Timestamp dedup)
+  → List Gmail Purchases emails
+  → Fetch metadata (internalDate) → filter already-recorded
+  → [per email] Get full message → resolve PDF/image/text
+  → OpenAI classify (purchase / refund / skip)
+  → Drive upload + Sheets appendOrUpdate
+```
+
+**Refund rules:** `Transaction Type: Refund`, negative `Total`, `REFUND:` prefix in Items, `refund_` Drive filename.
+
+### Workflow 1: Limit (50 recent)
+
+**File:** `Gmail Bill Scanner - Limit.json`  
+**Webhook:** `POST /gmail-bills/limit`
+
+- Lists up to **50** newest `category:purchases` messages
+- Waits for full processing, then returns:
+
+```json
+{
+  "success": true,
+  "mode": "limit",
+  "processed": 12,
+  "purchases": 10,
+  "refunds": 2,
+  "skipped": 38,
+  "errors": []
+}
+```
+
+### Workflow 2: All (paginated)
+
+**File:** `Gmail Bill Scanner - All.json`  
+**Webhook:** `POST /gmail-bills/all`
+
+- Paginates **all** matching Purchases emails
+- Responds immediately, then continues processing in background:
+
+```json
+{
+  "success": true,
+  "mode": "all",
+  "accepted": true,
+  "toProcess": 142,
+  "skipped": 58,
+  "message": "Scan started; processing in background"
+}
+```
+
+### Gmail workflow setup
+
+1. Import both JSON files
+2. Bind credentials on each workflow:
+   - **Header Auth** — same as Receipt Scanner (`o90kkLJZ1Wsqy6bT` placeholder)
+   - **Google Service Account API** — all Gmail HTTP Request nodes
+   - **OpenAI API** — vision + text analyze nodes
+   - **Google OAuth2** — Sheets + Drive nodes (same as Receipt Scanner)
+3. Set **Delegated User** on the service account credential to `{{$env.GMAIL_DELEGATED_USER}}`
+4. Activate both workflows
+5. Copy webhook URLs to PWA:
+   - `VITE_N8N_GMAIL_LIMIT_WEBHOOK_URL`
+   - `VITE_N8N_GMAIL_ALL_WEBHOOK_URL`
+
+### Testing Gmail workflows
+
+```bash
+# Credential smoke test — list 1 Purchases message
+curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  "https://gmail.googleapis.com/gmail/v1/users/$GMAIL_DELEGATED_USER/messages?q=category:purchases&maxResults=1"
+
+# Limit scan (50)
+curl -X POST "$N8N_URL/webhook/gmail-bills/limit" \
+  -H "x-api-key: $RECEIPT_API_KEY"
+
+# Full scan (async)
+curl -X POST "$N8N_URL/webhook/gmail-bills/all" \
+  -H "x-api-key: $RECEIPT_API_KEY"
+```
+
+### Gmail troubleshooting
+
+| Issue | Check |
+|-------|-------|
+| Gmail 403 / delegation error | Domain-wide delegation scope `gmail.readonly`; delegated user is Workspace mailbox |
+| `GMAIL_DELEGATED_USER` not set | n8n env var must match mailbox email |
+| Duplicate rows | `Email Timestamp` column exists; `appendOrUpdate` matches on that column |
+| OpenAI skip count high | Non-financial Purchases emails (shipping-only) are intentionally skipped |
+| All workflow timeout | Large mailboxes may hit n8n execution limits; use Limit workflow or schedule smaller batches |
+
+---
+
+## Sheet columns (standard)
+
+| Column | Used by |
+|--------|---------|
+| Date, Vendor, Category, Total, Tax, Currency, Items, Confidence, Submitted At | Receipt + Gmail |
+| Image Link / link | Drive `webViewLink` |
+| Email Timestamp | Gmail dedup key (`internalDate` ms string) |
+| Transaction Type | `Purchase` or `Refund` |
+
+---
+
+## General troubleshooting
+
+- **401 errors**: `RECEIPT_API_KEY` must match PWA `VITE_N8N_API_KEY`
+- **OpenAI errors**: API key needs `gpt-4o-mini` access
+- **Google OAuth errors**: Scopes include `spreadsheets` and `drive.file`
+- **Binary data issues** (Receipt Scanner): Webhook must receive file as `image` field

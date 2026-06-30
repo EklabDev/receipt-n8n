@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { Header } from '@/components/Header';
+import { GmailScanPanel } from '@/components/GmailScanPanel';
 import { PinLock } from '@/components/PinLock';
 import { CameraCapture, createThumbnail } from '@/components/CameraCapture';
 import { ReceiptPreview } from '@/components/ReceiptPreview';
@@ -95,6 +96,8 @@ function App() {
       <Toaster position="top-center" richColors closeButton />
 
       <main className="mx-auto w-full max-w-lg flex-1 px-4 py-5">
+        <GmailScanPanel />
+
         {/* Result view — shows extracted data summary */}
         {view === 'result' && lastResult?.extractedData && (
           <div className="mb-5">

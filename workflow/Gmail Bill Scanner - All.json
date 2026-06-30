@@ -1,0 +1,914 @@
+{
+  "name": "Gmail Bill Scanner - All",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gmail-bills/all",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-all",
+      "name": "Webhook - Gmail Bills All",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        300
+      ],
+      "webhookId": "gmail-bills-all",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "o90kkLJZ1Wsqy6bT",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Paginate all Gmail Purchases-category messages via service account\nconst delegatedUser = $env.GMAIL_DELEGATED_USER;\nif (!delegatedUser) {\n  throw new Error('GMAIL_DELEGATED_USER environment variable is not set');\n}\n\nconst allMessages = [];\nlet pageToken;\n\ndo {\n  const qs = { q: 'category:purchases', maxResults: 500 };\n  if (pageToken) qs.pageToken = pageToken;\n  const response = await this.helpers.httpRequestWithAuthentication.call(this, 'googleApi', {\n    method: 'GET',\n    url: `https://gmail.googleapis.com/gmail/v1/users/${delegatedUser}/messages`,\n    qs,\n    json: true,\n  });\n  if (response.messages?.length) allMessages.push(...response.messages);\n  pageToken = response.nextPageToken;\n} while (pageToken);\n\nreturn [{ json: { messages: allMessages, totalListed: allMessages.length } }];"
+      },
+      "id": "paginate",
+      "name": "Code - Paginate Gmail List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0",
+          "mode": "list",
+          "cachedResultName": "Receipt",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "sheets-read",
+      "name": "Google Sheets - Read Timestamps",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        20,
+        400
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qjcRKIDLVJUxwBME",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst messages = data.messages || [];\nif (messages.length === 0) {\n  return [{ json: { emptyList: true, totalListed: 0 } }];\n}\nreturn messages.map((m) => ({ json: { messageId: m.id } }));"
+      },
+      "id": "expand-ids",
+      "name": "Code - Expand Message IDs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "if-empty-list-cond",
+              "leftValue": "={{ String($json.emptyList) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-empty-list",
+      "name": "IF - Has Messages",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://gmail.googleapis.com/gmail/v1/users/' + $env.GMAIL_DELEGATED_USER + '/messages/' + $json.messageId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "format",
+              "value": "metadata"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "gmail-meta",
+      "name": "HTTP - Gmail Get Metadata",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        200
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "gSaGmailCred01",
+          "name": "Google Service Account - Gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Drop messages already recorded by Gmail internalDate (Email Timestamp column)\nconst sheetRows = $('Google Sheets - Read Timestamps').all();\nconst known = new Set(\n  sheetRows\n    .map((r) => String(r.json['Email Timestamp'] ?? r.json.emailTimestamp ?? '').trim())\n    .filter(Boolean)\n);\n\nconst items = $input.all();\nconst newMessages = [];\nlet skippedExisting = 0;\n\nfor (const item of items) {\n  const msg = item.json;\n  const internalDate = String(msg.internalDate ?? '');\n  const messageId = msg.id ?? msg.messageId;\n  if (!internalDate || !messageId) continue;\n  if (known.has(internalDate)) {\n    skippedExisting++;\n    continue;\n  }\n  newMessages.push({ json: { messageId, internalDate, skippedExisting } });\n}\n\nif (newMessages.length === 0) {\n  return [{ json: { noNew: true, skippedExisting, toProcess: 0 } }];\n}\n\n// Carry skippedExisting on first item for response builder\nnewMessages[0].json.skippedExisting = skippedExisting;\nreturn newMessages;"
+      },
+      "id": "filter-new",
+      "name": "Code - Filter New Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "if-new-cond",
+              "leftValue": "={{ String($json.noNew) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-new",
+      "name": "IF - Has New Messages",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const filter = $('Code - Filter New Messages').first().json;\nconst skipped = filter.skippedExisting || 0;\nconst allFiltered = $('Code - Filter New Messages').all();\nconst toProcess = filter.noNew ? 0 : allFiltered.length;\n\nreturn [{\n  json: {\n    success: true,\n    mode: 'all',\n    accepted: true,\n    toProcess,\n    skipped,\n    message: 'Scan started; processing in background',\n  },\n}];"
+      },
+      "id": "early-response",
+      "name": "Code - Build Early Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-early",
+      "name": "Respond 200 Early",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1560,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const filter = $('Code - Filter New Messages').first()?.json;\nreturn [{\n  json: {\n    success: true,\n    mode: 'all',\n    accepted: true,\n    toProcess: 0,\n    skipped: filter?.skippedExisting || 0,\n    message: 'No new purchase emails to process',\n  },\n}];"
+      },
+      "id": "empty-response",
+      "name": "Code - Build Empty Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-batches",
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1200,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://gmail.googleapis.com/gmail/v1/users/' + $env.GMAIL_DELEGATED_USER + '/messages/' + $('Split In Batches').item.json.messageId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "format",
+              "value": "full"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "gmail-full",
+      "name": "HTTP - Gmail Get Full Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1420,
+        600
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "gSaGmailCred01",
+          "name": "Google Service Account - Gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Gmail MIME: prefer PDF/image attachment; else extract body text for OpenAI text path\nconst message = $input.first().json;\nconst batch = $('Split In Batches').item.json;\n\nfunction decodeBase64Url(data) {\n  const normalized = data.replace(/-/g, '+').replace(/_/g, '/');\n  return Buffer.from(normalized, 'base64');\n}\n\nfunction walkParts(parts, acc = []) {\n  if (!parts) return acc;\n  for (const part of parts) {\n    if (part.parts) walkParts(part.parts, acc);\n    else acc.push(part);\n  }\n  return acc;\n}\n\nconst payload = message.payload || {};\nconst parts = walkParts(payload.parts || [payload]);\nconst headers = payload.headers || message.payload?.headers || [];\nconst subject = (headers.find((h) => h.name?.toLowerCase() === 'subject') || {}).value || 'Email Bill';\n\nlet billBinary = null;\nlet textBody = '';\n\nfor (const part of parts) {\n  if (part.mimeType === 'application/pdf' && part.body?.data) {\n    billBinary = {\n      data: decodeBase64Url(part.body.data).toString('base64'),\n      mimeType: 'application/pdf',\n      fileExtension: 'pdf',\n      fileName: part.filename || 'bill.pdf',\n    };\n    break;\n  }\n}\n\nif (!billBinary) {\n  for (const part of parts) {\n    const mime = part.mimeType || '';\n    if (mime.startsWith('image/') && part.body?.data) {\n      const ext = mime.split('/')[1] || 'jpg';\n      billBinary = {\n        data: decodeBase64Url(part.body.data).toString('base64'),\n        mimeType: mime,\n        fileExtension: ext,\n        fileName: part.filename || `bill.${ext}`,\n      };\n      break;\n    }\n  }\n}\n\nfunction partText(part) {\n  if (!part.body?.data) return '';\n  const raw = decodeBase64Url(part.body.data).toString('utf-8');\n  if ((part.mimeType || '') === 'text/html') {\n    return raw.replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();\n  }\n  return raw;\n}\n\nif (!billBinary) {\n  for (const part of parts) {\n    const mime = part.mimeType || '';\n    if (mime === 'text/plain' || mime === 'text/html') {\n      textBody += partText(part) + '\\n';\n    }\n  }\n  if (!textBody && payload.body?.data) {\n    textBody = decodeBase64Url(payload.body.data).toString('utf-8');\n  }\n}\n\nconst item = {\n  json: {\n    messageId: batch.messageId || message.id,\n    internalDate: String(batch.internalDate || message.internalDate),\n    gmailMessageId: message.id,\n    subject,\n    textOnly: !billBinary,\n    emailBody: textBody.slice(0, 12000),\n  },\n};\n\nif (billBinary) {\n  item.binary = { bill: billBinary };\n}\n\nreturn [item];"
+      },
+      "id": "resolve-binary",
+      "name": "Code - Resolve Bill Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1640,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "if-binary-cond",
+              "leftValue": "={{ String($json.textOnly) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-binary",
+      "name": "IF - Has Binary",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1860,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "text": "You are a receipt and purchase-email analysis assistant. Analyze the bill/receipt image and extract:\n\n1. vendor_name: The store/business name\n2. date: Transaction date in ISO 8601 format (YYYY-MM-DD)\n3. total: Total amount (number only, no currency symbol). For refunds, use the refunded amount as a positive number.\n4. tax: Tax amount (number, 0 if not visible)\n5. currency: Currency code (e.g., CAD, USD)\n6. category: Best-fit from: [\"Office Supplies\", \"Travel\", \"Meals & Entertainment\", \"Software & Subscriptions\", \"Hardware & Equipment\", \"Professional Services\", \"Utilities\", \"Transportation\", \"Other\"]\n7. items: Array of {description, amount, quantity}\n8. confidence: 0.0 to 1.0\n9. transaction_type: \"purchase\" | \"refund\" | \"skip\"\n\nRules:\n- \"purchase\" for order confirmations, invoices, receipts, charges\n- \"refund\" for refund/credit/return/charge-reversal confirmations\n- \"skip\" for non-financial emails (shipping-only updates, marketing, newsletters)\n- For refunds, category is usually \"Other\" unless clearly another expense category\n\nReturn ONLY valid JSON with these exact field names.",
+        "inputType": "base64",
+        "binaryPropertyName": "bill",
+        "options": {}
+      },
+      "id": "openai-vision",
+      "name": "OpenAI - Analyze Bill",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        2080,
+        520
+      ],
+      "continueOnFail": true,
+      "credentials": {
+        "openAiApi": {
+          "id": "B3kN1v1cXyyY0yhI",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are a purchase/refund email analysis assistant. Analyze the email text and extract the same JSON fields as a receipt analyzer:\n\n1. vendor_name 2. date (YYYY-MM-DD) 3. total (positive number) 4. tax 5. currency 6. category 7. items[] 8. confidence 9. transaction_type (\"purchase\"|\"refund\"|\"skip\")\n\nClassify refunds vs purchases vs skip per the same rules. Return ONLY valid JSON.\n\nSubject: {{ $('Code - Resolve Bill Binary').item.json.subject }}\n\nBody:\n{{ $('Code - Resolve Bill Binary').item.json.emailBody }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "openai-text",
+      "name": "OpenAI - Analyze Bill Text",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        2080,
+        680
+      ],
+      "continueOnFail": true,
+      "credentials": {
+        "openAiApi": {
+          "id": "B3kN1v1cXyyY0yhI",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse OpenAI response and format for Sheets + Drive (Gmail bills + refunds)\nconst openAiResponse = $input.first().json;\nconst source = $('Code - Resolve Bill Binary').first().json;\n\nlet parsed;\ntry {\n  const content = openAiResponse.content || openAiResponse.text || JSON.stringify(openAiResponse);\n  const jsonMatch = content.match(/\\`\\`\\`json?\\n?([\\s\\S]*?)\\n?\\`\\`\\`/) || [null, content];\n  parsed = JSON.parse(jsonMatch[1].trim());\n} catch (e) {\n  throw new Error(`Failed to parse OpenAI response: ${e.message}`);\n}\n\nconst txRaw = String(parsed.transaction_type || 'purchase').toLowerCase();\nif (txRaw === 'skip') {\n  return [{ json: { skip: true, messageId: source.messageId, internalDate: source.internalDate } }];\n}\n\nconst isRefund = txRaw === 'refund';\nconst transactionType = isRefund ? 'Refund' : 'Purchase';\nconst totalRaw = Number(parsed.total) || 0;\nconst total = isRefund ? -Math.abs(totalRaw) : Math.abs(totalRaw);\n\nconst itemsSummary = (parsed.items || [])\n  .map((item) => {\n    const qty = item.quantity && item.quantity > 1 ? `${item.quantity}× ` : '';\n    return `${qty}${item.description}: $${item.amount}`;\n  })\n  .join('; ');\n\nconst vendor = (parsed.vendor_name || 'unknown').replace(/[^a-zA-Z0-9]/g, '_');\nconst date = parsed.date || new Date().toISOString().split('T')[0];\nconst prefix = isRefund ? 'refund' : 'bill';\nconst filename = `${prefix}_${vendor}_${date}_${source.internalDate}.pdf`;\n\nconst itemsForSheet = isRefund ? `REFUND: ${itemsSummary}` : itemsSummary;\n\nconst binaryItem = $('Code - Resolve Bill Binary').first();\nconst out = {\n  json: {\n    skip: false,\n    sheetData: {\n      date: parsed.date,\n      vendor: parsed.vendor_name,\n      category: parsed.category || 'Other',\n      total,\n      tax: parsed.tax || 0,\n      currency: parsed.currency,\n      items: itemsForSheet,\n      confidence: parsed.confidence,\n      submittedAt: new Date().toISOString(),\n      emailTimestamp: source.internalDate,\n      transactionType,\n      source: 'gmail',\n      gmailMessageId: source.gmailMessageId || source.messageId,\n    },\n    driveFilename: filename,\n    resultType: isRefund ? 'refund' : 'purchase',\n    messageId: source.messageId,\n    internalDate: source.internalDate,\n  },\n};\n\nif (binaryItem.binary?.bill) {\n  out.binary = { bill: binaryItem.binary.bill };\n} else if (source.emailBody) {\n  out.binary = {\n    bill: {\n      data: Buffer.from(source.emailBody, 'utf-8').toString('base64'),\n      mimeType: 'text/plain',\n      fileExtension: 'txt',\n      fileName: filename.replace(/\\.pdf$/, '.txt'),\n    },\n  };\n}\n\nreturn [out];"
+      },
+      "id": "format-data",
+      "name": "Code - Format Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "if-skip-cond",
+              "leftValue": "={{ String($json.skip) }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-skip",
+      "name": "IF - Is Skip",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2520,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "bill",
+        "name": "={{ $('Code - Format Data').item.json.driveFilename }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1_xZgUpeBfa4BOPBS-6289_nmcnpYOR9d",
+          "mode": "list",
+          "cachedResultName": "2026",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1_xZgUpeBfa4BOPBS-6289_nmcnpYOR9d"
+        },
+        "options": {}
+      },
+      "id": "drive-upload",
+      "name": "Google Drive - Upload Bill",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2740,
+        560
+      ],
+      "continueOnFail": true,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "A8Dr9s98enWRLW98",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0",
+          "mode": "list",
+          "cachedResultName": "Receipt",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $('Code - Format Data').item.json.sheetData.date }}",
+            "Vendor": "={{ $('Code - Format Data').item.json.sheetData.vendor }}",
+            "Category": "={{ $('Code - Format Data').item.json.sheetData.category }}",
+            "Total": "={{ $('Code - Format Data').item.json.sheetData.total }}",
+            "Tax": "={{ $('Code - Format Data').item.json.sheetData.tax }}",
+            "Currency": "={{ $('Code - Format Data').item.json.sheetData.currency }}",
+            "Items": "={{ $('Code - Format Data').item.json.sheetData.items }}",
+            "Confidence": "={{ $('Code - Format Data').item.json.sheetData.confidence }}",
+            "Submitted At": "={{ $('Code - Format Data').item.json.sheetData.submittedAt }}",
+            "Email Timestamp": "={{ $('Code - Format Data').item.json.sheetData.emailTimestamp }}",
+            "Transaction Type": "={{ $('Code - Format Data').item.json.sheetData.transactionType }}",
+            "link": "={{ $('Google Drive - Upload Bill').item.json.webViewLink }}"
+          },
+          "matchingColumns": [
+            "Email Timestamp"
+          ],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vendor",
+              "displayName": "Vendor",
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Total",
+              "displayName": "Total",
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Tax",
+              "displayName": "Tax",
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Currency",
+              "displayName": "Currency",
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Items",
+              "displayName": "Items",
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Confidence",
+              "displayName": "Confidence",
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Submitted At",
+              "displayName": "Submitted At",
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email Timestamp",
+              "displayName": "Email Timestamp",
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Transaction Type",
+              "displayName": "Transaction Type",
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "link",
+              "displayName": "link",
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sheets-append",
+      "name": "Google Sheets - Append Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2740,
+        680
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qjcRKIDLVJUxwBME",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tag each loop iteration for final aggregation\nconst fmt = $input.first().json;\nif (fmt.skip) {\n  return [{ json: { result: 'skipped', reason: 'openai_skip', messageId: fmt.messageId } }];\n}\nconst tx = fmt.resultType || 'purchase';\nreturn [{ json: { result: tx, messageId: fmt.messageId, internalDate: fmt.internalDate } }];"
+      },
+      "id": "track-loop",
+      "name": "Code - Track Loop Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2960,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-empty",
+      "name": "Respond 200 Empty",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1560,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Gmail Bills All": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Read Timestamps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Read Timestamps": {
+      "main": [
+        [
+          {
+            "node": "Code - Paginate Gmail List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Paginate Gmail List": {
+      "main": [
+        [
+          {
+            "node": "Code - Expand Message IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Expand Message IDs": {
+      "main": [
+        [
+          {
+            "node": "IF - Has Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Has Messages": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Gmail Get Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code - Build Empty Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Gmail Get Metadata": {
+      "main": [
+        [
+          {
+            "node": "Code - Filter New Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Filter New Messages": {
+      "main": [
+        [
+          {
+            "node": "IF - Has New Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Has New Messages": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Early Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code - Build Empty Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Early Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Early",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Empty Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [],
+        [
+          {
+            "node": "HTTP - Gmail Get Full Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Gmail Get Full Message": {
+      "main": [
+        [
+          {
+            "node": "Code - Resolve Bill Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Resolve Bill Binary": {
+      "main": [
+        [
+          {
+            "node": "IF - Has Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Has Binary": {
+      "main": [
+        [
+          {
+            "node": "OpenAI - Analyze Bill",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "OpenAI - Analyze Bill Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI - Analyze Bill": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI - Analyze Bill Text": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Data": {
+      "main": [
+        [
+          {
+            "node": "IF - Is Skip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Is Skip": {
+      "main": [
+        [
+          {
+            "node": "Code - Track Loop Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Google Drive - Upload Bill",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive - Upload Bill": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Append Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Append Row": {
+      "main": [
+        [
+          {
+            "node": "Code - Track Loop Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Track Loop Result": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    {
+      "name": "gmail-bill-scanner"
+    }
+  ]
+}
