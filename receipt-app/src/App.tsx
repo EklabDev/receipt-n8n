@@ -9,6 +9,7 @@ import { StatusIndicator } from '@/components/StatusIndicator';
 import { FloatingActionButton } from '@/components/FloatingActionButton';
 import { Toaster, toast } from 'sonner';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { deleteExpenseRecord } from '@/lib/api';
 import { useReceiptApi } from '@/hooks/useReceiptApi';
 import type { Receipt } from '@/types/receipt';
 
@@ -85,6 +86,29 @@ function App() {
     }, 100);
   }, [handleDismiss]);
 
+  const handleDeleteReceipt = useCallback(
+    async (receipt: Receipt) => {
+      const sheetKey = receipt.sheetSubmittedAt ?? receipt.extractedData?.submittedAt;
+      const emailKey = receipt.emailTimestamp ?? receipt.extractedData?.emailTimestamp;
+
+      try {
+        if (sheetKey || emailKey) {
+          await deleteExpenseRecord({
+            submittedAt: sheetKey,
+            emailTimestamp: emailKey,
+          });
+        }
+
+        setReceipts((prev) => prev.filter((r) => r.id !== receipt.id));
+        toast.success('Record deleted');
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to delete record');
+        throw err;
+      }
+    },
+    [setReceipts]
+  );
+
   // PIN Lock gate
   if (!isUnlocked) {
     return <PinLock onUnlock={handleUnlock} />;
@@ -138,7 +162,7 @@ function App() {
               </span>
             )}
           </div>
-          <ReceiptHistory receipts={receipts} />
+          <ReceiptHistory receipts={receipts} onDelete={handleDeleteReceipt} />
         </div>
       </main>
 

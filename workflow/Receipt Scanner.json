@@ -264,7 +264,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Merge Google Drive link into the response\nconst formatData = $('Format Data').first().json;\nconst driveResult = $('Google Drive - Upload Image').first().json;\nconst sheetsResult = $('Google Sheets - Append Row').first().json;\n\nconst driveLink = driveResult.webViewLink || driveResult.webContentLink || '';\n\nreturn [\n  {\n    json: {\n      success: true,\n      data: {\n        ...formatData.extractedData,\n        driveLink: driveLink,\n        sheetRow: sheetsResult.updates?.updatedRows || null\n      }\n    }\n  }\n];"
+        "jsCode": "// Merge Google Drive link into the response\nconst formatData = $('Format Data').first().json;\nconst driveResult = $('Google Drive - Upload Image').first().json;\nconst sheetsResult = $('Google Sheets - Append Row').first().json;\n\nconst driveLink = driveResult.webViewLink || driveResult.webContentLink || '';\n\nreturn [\n  {\n    json: {\n      success: true,\n      data: {\n        ...formatData.extractedData,\n        driveLink: driveLink,\n        submittedAt: formatData.sheetData.submittedAt,\n        sheetRow: sheetsResult.updates?.updatedRows || null\n      }\n    }\n  }\n];"
       },
       "id": "beb5473c-d0ca-4ed2-9484-70954bcae61b",
       "name": "Build Response",

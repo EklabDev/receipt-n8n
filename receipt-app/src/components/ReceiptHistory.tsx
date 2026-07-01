@@ -4,9 +4,10 @@ import type { Receipt } from '@/types/receipt';
 
 interface ReceiptHistoryProps {
   receipts: Receipt[];
+  onDelete?: (receipt: Receipt) => Promise<void>;
 }
 
-export function ReceiptHistory({ receipts }: ReceiptHistoryProps) {
+export function ReceiptHistory({ receipts, onDelete }: ReceiptHistoryProps) {
   if (receipts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -26,7 +27,7 @@ export function ReceiptHistory({ receipts }: ReceiptHistoryProps) {
   return (
     <div className="flex flex-col gap-2.5">
       {receipts.map((receipt) => (
-        <ReceiptCard key={receipt.id} receipt={receipt} />
+        <ReceiptCard key={receipt.id} receipt={receipt} onDelete={onDelete} />
       ))}
     </div>
   );

@@ -14,15 +14,23 @@ export interface ExtractedReceipt {
   items: ReceiptItem[];
   confidence: number;
   driveLink?: string;
+  /** Sheet dedup key from n8n (camera receipts) */
+  submittedAt?: string;
+  /** Sheet dedup key from n8n (Gmail imports) */
+  emailTimestamp?: string;
 }
 
 export interface Receipt {
   id: string;
   imageData: string; // base64 thumbnail for history display
   status: 'pending' | 'uploading' | 'success' | 'error';
-  submittedAt: string; // ISO date
+  submittedAt: string; // ISO date — local display / fallback
   extractedData?: ExtractedReceipt;
   errorMessage?: string;
+  /** Google Sheet row key — `Submitted At` column value */
+  sheetSubmittedAt?: string;
+  /** Google Sheet row key — `Email Timestamp` column value */
+  emailTimestamp?: string;
 }
 
 export type ReceiptCategory =

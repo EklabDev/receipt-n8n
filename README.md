@@ -64,6 +64,7 @@ npm run dev
 | `VITE_N8N_WEBHOOK_URL` | PWA `.env` / GitHub Secrets | Receipt upload webhook |
 | `VITE_N8N_GMAIL_LIMIT_WEBHOOK_URL` | PWA `.env` / GitHub Secrets | Gmail scan (50 recent) |
 | `VITE_N8N_GMAIL_ALL_WEBHOOK_URL` | PWA `.env` / GitHub Secrets | Gmail scan (all purchases) |
+| `VITE_N8N_DELETE_WEBHOOK_URL` | PWA `.env` / GitHub Secrets | Delete expense row webhook |
 | `VITE_N8N_API_KEY` | PWA `.env` / GitHub Secrets | `x-api-key` for all webhooks |
 | `RECEIPT_API_KEY` | n8n env vars | Same API key, validated server-side |
 | `GMAIL_DELEGATED_USER` | n8n env vars | Workspace mailbox for Gmail delegation |

@@ -9,6 +9,7 @@ This directory contains n8n workflow exports for the receipt stack:
 | Receipt Scanner (PWA upload) | `Receipt Scanner.json` | `POST /receipt` |
 | Gmail Bill Scanner — Limit (50) | `Gmail Bill Scanner - Limit.json` | `POST /gmail-bills/limit` |
 | Gmail Bill Scanner — All | `Gmail Bill Scanner - All.json` | `POST /gmail-bills/all` |
+| Expense Record Delete | `Expense Record Delete.json` | `POST /expense/delete` |
 
 All webhooks use **Header Auth** (`x-api-key` header, same key as `RECEIPT_API_KEY`).
 
@@ -160,6 +161,41 @@ curl -X POST "$N8N_URL/webhook/gmail-bills/all" \
 | Image Link / link | Drive `webViewLink` |
 | Email Timestamp | Gmail dedup key (`internalDate` ms string) |
 | Transaction Type | `Purchase` or `Refund` |
+
+---
+
+## Expense Record Delete
+
+**File:** `Expense Record Delete.json`  
+**Webhook:** `POST /expense/delete`
+
+Deletes one row from the expense Google Sheet by matching `Submitted At` (camera receipts) or `Email Timestamp` (Gmail imports).
+
+### Request
+
+```bash
+curl -X POST "$N8N_URL/webhook/expense/delete" \
+  -H "x-api-key: $RECEIPT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"submittedAt":"2026-05-11T04:46:19.578Z"}'
+```
+
+Gmail row:
+
+```bash
+curl -X POST "$N8N_URL/webhook/expense/delete" \
+  -H "x-api-key: $RECEIPT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"emailTimestamp":"1735689600000"}'
+```
+
+### Responses
+
+- `200` — `{ success: true, deleted: true, rowNumber, matchedBy }`
+- `404` — row not found
+- `400` — missing both `submittedAt` and `emailTimestamp`
+
+PWA: set `VITE_N8N_DELETE_WEBHOOK_URL` and use the trash icon on each history card (two-step confirm).
 
 ---
 

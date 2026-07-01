@@ -8,6 +8,9 @@ export const N8N_GMAIL_LIMIT_WEBHOOK_URL = import.meta.env.VITE_N8N_GMAIL_LIMIT_
 export const N8N_GMAIL_ALL_WEBHOOK_URL = import.meta.env.VITE_N8N_GMAIL_ALL_WEBHOOK_URL as
   | string
   | undefined;
+export const N8N_DELETE_WEBHOOK_URL = import.meta.env.VITE_N8N_DELETE_WEBHOOK_URL as
+  | string
+  | undefined;
 const API_KEY = import.meta.env.VITE_N8N_API_KEY;
 
 export interface SubmitReceiptResponse {
@@ -64,6 +67,52 @@ export async function scanGmailBillsAll(): Promise<GmailScanResponse> {
   return postGmailWebhook(N8N_GMAIL_ALL_WEBHOOK_URL);
 }
 
+export interface DeleteExpenseResponse {
+  success: boolean;
+  deleted?: boolean;
+  error?: string;
+  rowNumber?: number;
+}
+
+export interface DeleteExpenseParams {
+  submittedAt?: string;
+  emailTimestamp?: string;
+}
+
+/** Delete a row from the expense Google Sheet by sheet key. */
+export async function deleteExpenseRecord(
+  params: DeleteExpenseParams
+): Promise<DeleteExpenseResponse> {
+  if (!N8N_DELETE_WEBHOOK_URL) {
+    throw new Error('Delete webhook URL not configured');
+  }
+  if (!params.submittedAt && !params.emailTimestamp) {
+    throw new Error('No sheet key available for this record');
+  }
+
+  const response = await fetch(N8N_DELETE_WEBHOOK_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': API_KEY || '',
+    },
+    body: JSON.stringify(params),
+  });
+
+  const body = (await response.json().catch(() => ({}))) as DeleteExpenseResponse & {
+    error?: string;
+  };
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Unauthorized – check your API key');
+    }
+    throw new Error(body.error || `Server error (${response.status})`);
+  }
+
+  return body;
+}
+
 /**
  * Submit a receipt image to the n8n webhook for processing.
  * Sends as multipart/form-data with API key auth header.
@@ -114,12 +163,17 @@ export function buildReceiptRecord(
   extractedData?: ExtractedReceipt,
   errorMessage?: string
 ): Receipt {
+  const sheetSubmittedAt = extractedData?.submittedAt;
+  const emailTimestamp = extractedData?.emailTimestamp;
+
   return {
     id,
     imageData: thumbnailBase64,
     status,
-    submittedAt: new Date().toISOString(),
+    submittedAt: sheetSubmittedAt ?? new Date().toISOString(),
     extractedData,
     errorMessage,
+    sheetSubmittedAt,
+    emailTimestamp,
   };
 }
