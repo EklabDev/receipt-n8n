@@ -44,6 +44,13 @@ jobs:
               env:
                   VITE_APP_PIN: ${{ secrets.VITE_APP_PIN }}
                   VITE_N8N_WEBHOOK_URL: ${{ secrets.VITE_N8N_WEBHOOK_URL }}
+                  VITE_N8N_GMAIL_LIMIT_WEBHOOK_URL: ${{ secrets.VITE_N8N_GMAIL_LIMIT_WEBHOOK_URL }}
+                  VITE_N8N_GMAIL_ALL_WEBHOOK_URL: ${{ secrets.VITE_N8N_GMAIL_ALL_WEBHOOK_URL }}
+                  VITE_N8N_DELETE_WEBHOOK_URL: ${{ secrets.VITE_N8N_DELETE_WEBHOOK_URL }}
+                  VITE_N8N_EMAIL_DELETE_WEBHOOK_URL: ${{ secrets.VITE_N8N_EMAIL_DELETE_WEBHOOK_URL }}
+                  VITE_N8N_MILEAGE_WEBHOOK_URL: ${{ secrets.VITE_N8N_MILEAGE_WEBHOOK_URL }}
+                  VITE_N8N_MILEAGE_DELETE_WEBHOOK_URL: ${{ secrets.VITE_N8N_MILEAGE_DELETE_WEBHOOK_URL }}
+                  VITE_N8N_RECORDS_LIST_WEBHOOK_URL: ${{ secrets.VITE_N8N_RECORDS_LIST_WEBHOOK_URL }}
                   VITE_N8N_API_KEY: ${{ secrets.VITE_N8N_API_KEY }}
 
             - name: Upload artifact

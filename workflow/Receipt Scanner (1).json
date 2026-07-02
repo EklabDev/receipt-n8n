@@ -84,7 +84,7 @@
           "__rl": true,
           "value": "gid=0",
           "mode": "list",
-          "cachedResultName": "Sheet1",
+          "cachedResultName": "Receipt",
           "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit#gid=0"
         },
         "columns": {
@@ -264,7 +264,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Merge Google Drive link into the response\nconst formatData = $('Format Data').first().json;\nconst driveResult = $('Google Drive - Upload Image').first().json;\nconst sheetsResult = $('Google Sheets - Append Row').first().json;\n\nconst driveLink = driveResult.webViewLink || driveResult.webContentLink || '';\n\nreturn [\n  {\n    json: {\n      success: true,\n      data: {\n        ...formatData.extractedData,\n        driveLink: driveLink,\n        submittedAt: formatData.sheetData.submittedAt,\n        sheetRow: sheetsResult.updates?.updatedRows || null\n      }\n    }\n  }\n];"
+        "jsCode": "// Merge Google Drive link into the response\nconst formatData = $('Format Data').first().json;\nconst driveResult = $('Google Drive - Upload Image').first().json;\nconst sheetsResult = $('Google Sheets - Append Row').first().json;\n\nconst driveLink = driveResult.webViewLink || driveResult.webContentLink || '';\n\nreturn [\n  {\n    json: {\n      success: true,\n      data: {\n        ...formatData.extractedData,\n        driveLink: driveLink,\n        sheetRow: sheetsResult.updates?.updatedRows || null\n      }\n    }\n  }\n];"
       },
       "id": "beb5473c-d0ca-4ed2-9484-70954bcae61b",
       "name": "Build Response",
@@ -537,7 +537,7 @@
     "executionOrder": "v1",
     "availableInMCP": false
   },
-  "versionId": "1f701602-f403-490c-bb40-4ac81c4105a2",
+  "versionId": "0c0ab74d-ec05-4355-99f6-57d62d0ba7b8",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "8db90a53deb80842662d3387b648240ddb9fed5608e8664389c2d2742164a186"

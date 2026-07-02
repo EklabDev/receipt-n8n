@@ -9,26 +9,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { Receipt } from '@/types/receipt';
+import type { Trip } from '@/types/mileage';
 
-interface DeleteRecordDialogProps {
-  receipt: Receipt | null;
+interface DeleteTripDialogProps {
+  trip: Trip | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (receipt: Receipt) => Promise<void>;
+  onConfirm: (trip: Trip) => Promise<void>;
 }
 
-export function DeleteRecordDialog({
-  receipt,
+export function DeleteTripDialog({
+  trip,
   open,
   onOpenChange,
   onConfirm,
-}: DeleteRecordDialogProps) {
+}: DeleteTripDialogProps) {
   const [step, setStep] = useState<1 | 2>(1);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const hasSheetKey = Boolean(receipt?.sheetSubmittedAt || receipt?.emailTimestamp);
-  const vendor = receipt?.extractedData?.vendor || 'this record';
+  const hasSheetKey = Boolean(trip?.sheetSubmittedAt);
+  const label = trip?.businessPurpose || 'this trip';
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
@@ -39,10 +39,10 @@ export function DeleteRecordDialog({
   };
 
   const handleConfirm = async () => {
-    if (!receipt) return;
+    if (!trip) return;
     setIsDeleting(true);
     try {
-      await onConfirm(receipt);
+      await onConfirm(trip);
       handleOpenChange(false);
     } finally {
       setIsDeleting(false);
@@ -55,18 +55,16 @@ export function DeleteRecordDialog({
         {step === 1 ? (
           <>
             <DialogHeader>
-              <DialogTitle>Delete expense record?</DialogTitle>
+              <DialogTitle>Delete mileage record?</DialogTitle>
               <DialogDescription>
-                You are about to delete <strong>{vendor}</strong>
-                {receipt?.extractedData?.total != null && (
-                  <> (${Math.abs(receipt.extractedData.total).toFixed(2)})</>
-                )}
-                . This action cannot be undone.
+                You are about to delete <strong>{label}</strong>
+                {trip?.distanceKm != null && <> ({trip.distanceKm.toFixed(2)} km)</>}. This action
+                cannot be undone.
               </DialogDescription>
             </DialogHeader>
             {!hasSheetKey && (
               <p className="text-xs text-muted-foreground">
-                This record has no Google Sheet key — only local history will be removed.
+                This trip has no Google Sheet key — only local history will be removed.
               </p>
             )}
             <DialogFooter>
@@ -84,8 +82,8 @@ export function DeleteRecordDialog({
               <DialogTitle>Confirm permanent deletion</DialogTitle>
               <DialogDescription>
                 {hasSheetKey
-                  ? 'This will permanently delete the row from your Google Sheet (Receipts or Email tab).'
-                  : 'This will remove the record from your device only.'}
+                  ? 'This will permanently delete the row from your Mileage tab.'
+                  : 'This will remove the trip from your device only.'}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>

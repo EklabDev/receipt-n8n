@@ -27,7 +27,11 @@ import {
 
 type LastScan = GmailScanResponse & { scanType: 'limit' | 'all' };
 
-export function GmailScanPanel() {
+interface GmailScanPanelProps {
+  onScanComplete?: () => void;
+}
+
+export function GmailScanPanel({ onScanComplete }: GmailScanPanelProps) {
   const [isLimitLoading, setIsLimitLoading] = useState(false);
   const [isAllLoading, setIsAllLoading] = useState(false);
   const [confirmAllOpen, setConfirmAllOpen] = useState(false);
@@ -47,12 +51,13 @@ export function GmailScanPanel() {
       toast.success(
         `Scan complete: ${result.processed ?? 0} processed (${result.purchases ?? 0} purchases, ${result.refunds ?? 0} refunds)`
       );
+      onScanComplete?.();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Gmail scan failed');
     } finally {
       setIsLimitLoading(false);
     }
-  }, [isBusy, limitConfigured]);
+  }, [isBusy, limitConfigured, onScanComplete]);
 
   const handleAllScan = useCallback(async () => {
     if (!allConfigured || isBusy) return;
@@ -63,12 +68,13 @@ export function GmailScanPanel() {
       const result = await scanGmailBillsAll();
       setLastScan({ ...result, scanType: 'all' });
       toast.success(result.message || 'Full Gmail scan started');
+      onScanComplete?.();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Gmail scan failed');
     } finally {
       setIsAllLoading(false);
     }
-  }, [allConfigured, isBusy]);
+  }, [allConfigured, isBusy, onScanComplete]);
 
   if (!limitConfigured && !allConfigured) {
     return null;

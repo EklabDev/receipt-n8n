@@ -17,7 +17,7 @@ The n8n workflows require the following credentials. **Never commit actual crede
   - `https://www.googleapis.com/auth/spreadsheets` (Google Sheets read/write)
   - `https://www.googleapis.com/auth/drive.file` (Google Drive file upload)
 - **Setup**: Follow [n8n Google OAuth2 guide](https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/)
-- **Used by**: Receipt Scanner, Gmail Bill Scanner (Sheets append + Drive upload)
+- **Used by**: Receipt Scanner, Gmail Bill Scanner, Mileage workflows (Sheets append + Drive upload)
 
 ### 3. Google Service Account (Gmail — domain-wide delegation)
 
@@ -53,21 +53,37 @@ Set in your n8n instance (Settings → Environment Variables):
 |----------|-------|
 | `RECEIPT_API_KEY` | A strong, random API key (e.g., generate with `openssl rand -hex 32`) |
 | `GMAIL_DELEGATED_USER` | Workspace mailbox to impersonate (e.g. `you@yourdomain.com`) |
+| `MILEAGE_RATE_CAD` | CRA per-km rate for business mileage (e.g. `0.72` for 2024) |
 
-## Google Sheet columns
+## Google Sheet — three tabs
 
-The standard expense sheet (same ID as Receipt Scanner) needs these **row 1 headers**:
+Use one spreadsheet with **three tabs** by record source. Create tabs named exactly:
 
-| Column | Header | Notes |
-|--------|--------|-------|
-| A–J | Date, Vendor, Category, Total, Tax, Currency, Items, Image Link, Confidence, Submitted At | Same as Receipt Scanner |
-| K | `Email Timestamp` | Gmail `internalDate` (ms string) — **dedup key** |
-| L | `Transaction Type` | `Purchase` or `Refund` |
-| M | `link` | Drive `webViewLink` (if not already present) |
+| Tab | Written by | Dedup key |
+|-----|------------|-----------|
+| **Receipt** | Receipt Scanner (camera) | `Submitted At` |
+| **Email** | Gmail Bill Scanner | `emailTimestamp` |
+| **Milage** | Mileage Trip Record | `submittedAt` |
 
-Optional debugging columns: `Source` (`gmail`), `Gmail Message ID`.
+Create tabs named exactly **Receipt**, **Email**, **Milage** (matches current workbook export).
 
-### Refund accounting rules
+### Receipt tab headers
+
+`Date`, `Vendor`, `Category`, `Total`, `Tax`, `Currency`, `Items`, `Image Link`, `Confidence`, `Submitted At`, `link`
+
+### Email tab headers
+
+`date`, `vendor`, `category`, `total`, `tax`, `currency`, `items`, `confidence`, `submittedAt`, `emailTimestamp`, `transactionType`, `source`, `gmailMessageId`, `driveFilename`, `link`, `resultType`, `messageId`, `internalDate`
+
+### Milage tab headers
+
+`date`, `startTime`, `endTime`, `startLocation`, `endLocation`, `distanceKm`, `businessPurpose`, `vehicle`, `trackingMode`, `rate`, `deduction`, `submittedAt` (ISO 8601 datetime, plain text), `gpsPoints`
+
+### Migration from Sheet1
+
+If you have existing rows on **Sheet1**, copy camera receipts → **Receipts** tab and Gmail rows → **Email** tab before re-importing updated workflows.
+
+### Refund accounting rules (Email tab)
 
 When OpenAI classifies an email as a refund:
 

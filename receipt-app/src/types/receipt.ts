@@ -12,12 +12,17 @@ export interface ExtractedReceipt {
   currency: string;
   category: string;
   items: ReceiptItem[];
+  itemsSummary?: string;
   confidence: number;
   driveLink?: string;
   /** Sheet dedup key from n8n (camera receipts) */
   submittedAt?: string;
   /** Sheet dedup key from n8n (Gmail imports) */
   emailTimestamp?: string;
+  transactionType?: string;
+  source?: string;
+  gmailMessageId?: string;
+  driveFilename?: string;
 }
 
 export interface Receipt {

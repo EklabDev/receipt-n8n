@@ -1,14 +1,13 @@
 import { Loader2 } from 'lucide-react';
-import { ReceiptCard } from '@/components/ReceiptCard';
+import { TripCard } from '@/components/TripCard';
 import { InfiniteScrollSentinel } from '@/components/InfiniteScrollSentinel';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { FileX2 } from 'lucide-react';
-import type { Receipt } from '@/types/receipt';
+import type { Trip } from '@/types/mileage';
 
-interface ReceiptHistoryProps {
-  receipts: Receipt[];
-  onDelete?: (receipt: Receipt) => Promise<void>;
+interface TripHistoryProps {
+  trips: Trip[];
+  onDelete?: (trip: Trip) => Promise<void>;
   loading?: boolean;
   initialLoading?: boolean;
   hasMore?: boolean;
@@ -16,13 +15,10 @@ interface ReceiptHistoryProps {
   error?: string | null;
   onRefresh?: () => void;
   total?: number;
-  emptyTitle?: string;
-  emptyDescription?: string;
-  variant?: 'receipt' | 'email';
 }
 
-export function ReceiptHistory({
-  receipts,
+export function TripHistory({
+  trips,
   onDelete,
   loading = false,
   initialLoading = false,
@@ -31,21 +27,18 @@ export function ReceiptHistory({
   error,
   onRefresh,
   total,
-  emptyTitle = 'No receipts yet',
-  emptyDescription = 'Tap the camera button to scan your first receipt',
-  variant = 'receipt',
-}: ReceiptHistoryProps) {
+}: TripHistoryProps) {
   if (initialLoading) {
     return (
-      <div className="flex flex-col gap-2.5">
-        {Array.from({ length: 4 }).map((_, i) => (
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, i) => (
           <Skeleton key={i} className="h-24 w-full rounded-xl" />
         ))}
       </div>
     );
   }
 
-  if (error && receipts.length === 0) {
+  if (error && trips.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
         <p className="text-sm text-destructive">{error}</p>
@@ -58,32 +51,23 @@ export function ReceiptHistory({
     );
   }
 
-  if (receipts.length === 0) {
+  if (trips.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted/80 mb-4">
-          <FileX2 className="h-7 w-7 text-muted-foreground" />
-        </div>
-        <p className="text-sm font-medium text-muted-foreground">{emptyTitle}</p>
-        <p className="mt-1 text-xs text-muted-foreground/70">{emptyDescription}</p>
-      </div>
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        No trips recorded yet. Start a GPS trip or add one manually.
+      </p>
     );
   }
 
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="space-y-2">
       {total != null && total > 0 && (
         <p className="text-xs text-muted-foreground tabular-nums">
-          Showing {receipts.length} of {total}
+          Showing {trips.length} of {total}
         </p>
       )}
-      {receipts.map((receipt) => (
-        <ReceiptCard
-          key={receipt.id}
-          receipt={receipt}
-          onDelete={onDelete}
-          variant={variant}
-        />
+      {trips.map((trip) => (
+        <TripCard key={trip.id} trip={trip} onDelete={onDelete} />
       ))}
       {loading && (
         <div className="flex justify-center py-3">

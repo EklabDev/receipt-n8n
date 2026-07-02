@@ -1,0 +1,391 @@
+{
+  "name": "Mileage Trip Record",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mileage/trip",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1a8af64a-6c4f-42cd-a641-08fec44e735c",
+      "name": "Webhook - Record Trip",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        80
+      ],
+      "webhookId": "mileage-trip-webhook",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "o90kkLJZ1Wsqy6bT",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body ?? $input.first().json;\n\nconst submittedAt = body.submittedAt ? String(body.submittedAt).trim() : '';\nconst startTime = body.startTime ? String(body.startTime).trim() : '';\nconst endTime = body.endTime ? String(body.endTime).trim() : '';\nconst distanceKm = Number(body.distanceKm);\nconst businessPurpose = body.businessPurpose ? String(body.businessPurpose).trim() : '';\nconst trackingMode = body.trackingMode === 'Manual' ? 'Manual' : 'GPS';\n\nif (!submittedAt || !startTime || !endTime || !businessPurpose) {\n  return [{ json: { valid: false, error: 'submittedAt, startTime, endTime, and businessPurpose are required' } }];\n}\nif (!Number.isFinite(distanceKm) || distanceKm <= 0) {\n  return [{ json: { valid: false, error: 'distanceKm must be a positive number' } }];\n}\nconst MILEAGE_RATE_CAD = '0.72'\nconst rate = parseFloat(MILEAGE_RATE_CAD || '0.72');\nconst roundedKm = Math.round(distanceKm * 100) / 100;\nconst deduction = Math.round(roundedKm * rate * 100) / 100;\n\nconst startLat = body.startLat != null ? Number(body.startLat) : null;\nconst startLng = body.startLng != null ? Number(body.startLng) : null;\nconst endLat = body.endLat != null ? Number(body.endLat) : null;\nconst endLng = body.endLng != null ? Number(body.endLng) : null;\n\nfunction loc(lat, lng, text) {\n  if (text) return String(text);\n  if (lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)) {\n    return `${lat.toFixed(6)},${lng.toFixed(6)}`;\n  }\n  return '';\n}\n\nconst date = (endTime || submittedAt).slice(0, 10);\nconst gpsPoints = body.gpsPointCount != null ? Number(body.gpsPointCount) : '';\n\nreturn [{\n  json: {\n    valid: true,\n    sheetData: {\n      date,\n      startTime,\n      endTime,\n      startLocation: loc(startLat, startLng, body.startLocation),\n      endLocation: loc(endLat, endLng, body.endLocation),\n      distanceKm: roundedKm,\n      businessPurpose,\n      vehicle: body.vehicle ? String(body.vehicle) : '',\n      trackingMode,\n      rate,\n      deduction,\n      submittedAt,\n      gpsPoints,\n    },\n    response: {\n      distanceKm: roundedKm,\n      deduction,\n      submittedAt,\n    },\n  },\n}];"
+      },
+      "id": "f6939fbb-6fea-4690-9f04-a5aef74b85ba",
+      "name": "Parse Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid-check",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8de1871e-0018-46dc-a10e-f3414ea53ae3",
+      "name": "IF Valid Request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error || 'Invalid request' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "94b5d522-c073-45ad-9691-57017e299d25",
+      "name": "Respond 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0",
+          "mode": "list",
+          "cachedResultName": "Receipt",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 357332863,
+          "mode": "list",
+          "cachedResultName": "Milage",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit#gid=357332863"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "date": "={{ $('Parse Request').first().json.sheetData.date }}",
+            "startTime": "={{ $('Parse Request').first().json.sheetData.startTime }}",
+            "endLocation": "={{ $('Parse Request').first().json.sheetData.endLocation }}",
+            "endTime": "={{ $('Parse Request').first().json.sheetData.endTime }}",
+            "distanceKm": "={{ $('Parse Request').first().json.sheetData.distanceKm }}",
+            "startLocation": "={{ $('Parse Request').first().json.sheetData.startLocation }}",
+            "businessPurpose": "={{ $('Parse Request').first().json.sheetData.businessPurpose }}",
+            "rate": "={{ $('Parse Request').first().json.sheetData.rate }}",
+            "vehicle": "={{ $('Parse Request').first().json.sheetData.vehicle }}",
+            "deduction": "={{ $('Parse Request').first().json.sheetData.deduction }}",
+            "gpsPoints": "={{ $('Parse Request').first().json.sheetData.date }}",
+            "submittedAt": "={{ $('Parse Request').first().json.sheetData.date }}",
+            "trackingMode": "={{ $('Parse Request').first().json.sheetData.trackingMode }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "startTime",
+              "displayName": "startTime",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "endTime",
+              "displayName": "endTime",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "startLocation",
+              "displayName": "startLocation",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "endLocation",
+              "displayName": "endLocation",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "distanceKm",
+              "displayName": "distanceKm",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "businessPurpose",
+              "displayName": "businessPurpose",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "vehicle",
+              "displayName": "vehicle",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "trackingMode",
+              "displayName": "trackingMode",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "rate",
+              "displayName": "rate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "deduction",
+              "displayName": "deduction",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "submittedAt",
+              "displayName": "submittedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "gpsPoints",
+              "displayName": "gpsPoints",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "bad2ce47-ab46-4b34-917f-c2bb9203a114",
+      "name": "Google Sheets - Append Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qjcRKIDLVJUxwBME",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsed = $('Parse Request').first().json;\nreturn [{\n  json: {\n    success: true,\n    data: parsed.response,\n  },\n}];"
+      },
+      "id": "74c32d87-4fe9-40fc-9685-4484ad841964",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "8a927997-e2ec-4f10-a2d6-64d5c37b386b",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Record Trip": {
+      "main": [
+        [
+          {
+            "node": "Parse Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Request": {
+      "main": [
+        [
+          {
+            "node": "IF Valid Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Valid Request": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Append Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Append Row": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "cd73461f-fc45-480d-93d3-75053963f757",
+  "meta": {
+    "instanceId": "8db90a53deb80842662d3387b648240ddb9fed5608e8664389c2d2742164a186"
+  },
+  "id": "xcJH3KcN4gkF5yHRELpv7",
+  "tags": [
+    {
+      "updatedAt": "2026-07-01T18:48:13.951Z",
+      "createdAt": "2026-07-01T18:48:13.951Z",
+      "id": "mf8xbCPdamBbNaJt",
+      "name": "mileage"
+    }
+  ]
+}

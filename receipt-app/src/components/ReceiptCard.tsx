@@ -3,13 +3,22 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DeleteRecordDialog } from '@/components/DeleteRecordDialog';
-import { CheckCircle2, AlertCircle, Clock, ExternalLink, Trash2 } from 'lucide-react';
+import {
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  ExternalLink,
+  Trash2,
+  Receipt,
+  Mail,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Receipt } from '@/types/receipt';
+import type { Receipt as ReceiptRecord } from '@/types/receipt';
 
 interface ReceiptCardProps {
-  receipt: Receipt;
-  onDelete?: (receipt: Receipt) => Promise<void>;
+  receipt: ReceiptRecord;
+  onDelete?: (receipt: ReceiptRecord) => Promise<void>;
+  variant?: 'receipt' | 'email';
 }
 
 const statusConfig = {
@@ -35,34 +44,38 @@ const statusConfig = {
   },
 } as const;
 
-export function ReceiptCard({ receipt, onDelete }: ReceiptCardProps) {
+export function ReceiptCard({ receipt, onDelete, variant = 'receipt' }: ReceiptCardProps) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const config = statusConfig[receipt.status];
   const StatusIcon = config.icon;
   const data = receipt.extractedData;
   const date = new Date(receipt.submittedAt);
+  const isRefund =
+    variant === 'email' &&
+    (data?.transactionType?.toLowerCase() === 'refund' || (data?.total ?? 0) < 0);
+  const PlaceholderIcon = variant === 'email' ? Mail : Receipt;
 
   return (
     <>
       <Card className="overflow-hidden transition-all hover:shadow-md py-0 gap-0">
         <CardContent className="flex gap-3 p-3">
-          {/* Thumbnail */}
-          <div className="h-20 w-16 shrink-0 overflow-hidden rounded-lg bg-muted">
-            {receipt.imageData && (
+          <div className="flex h-20 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+            {receipt.imageData ? (
               <img
                 src={receipt.imageData}
                 alt="Receipt thumbnail"
                 className="h-full w-full object-cover"
               />
+            ) : (
+              <PlaceholderIcon className="h-6 w-6 text-muted-foreground" />
             )}
           </div>
 
-          {/* Info */}
           <div className="flex min-w-0 flex-1 flex-col justify-between">
             <div>
               <div className="flex items-center justify-between gap-2">
                 <h3 className="truncate text-sm font-semibold">
-                  {data?.vendor || 'Processing...'}
+                  {data?.vendor || 'Unknown'}
                 </h3>
                 <div className="flex shrink-0 items-center gap-1">
                   {onDelete && (
@@ -77,6 +90,11 @@ export function ReceiptCard({ receipt, onDelete }: ReceiptCardProps) {
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   )}
+                  {isRefund && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-destructive/30 text-destructive">
+                      Refund
+                    </Badge>
+                  )}
                   <Badge
                     variant="outline"
                     className={cn('text-[10px] px-1.5 py-0', config.className)}
@@ -87,7 +105,7 @@ export function ReceiptCard({ receipt, onDelete }: ReceiptCardProps) {
                 </div>
               </div>
               {data?.category && (
-                <p className="mt-0.5 text-xs text-muted-foreground">{data.category}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground truncate">{data.category}</p>
               )}
             </div>
 
@@ -101,13 +119,29 @@ export function ReceiptCard({ receipt, onDelete }: ReceiptCardProps) {
               </p>
               <div className="flex items-center gap-2">
                 {data?.total !== undefined && (
-                  <span className="text-sm font-semibold tabular-nums">
-                    ${data.total.toFixed(2)}
+                  <span
+                    className={cn(
+                      'text-sm font-semibold tabular-nums',
+                      isRefund && 'text-destructive'
+                    )}
+                  >
+                    ${Math.abs(data.total).toFixed(2)}
                   </span>
                 )}
                 {data?.driveLink && (
                   <a
                     href={data.driveLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:text-primary/80"
+                    aria-label="View in Google Drive"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
+                 {data?.driveFilename && (
+                  <a
+                    href={data.driveFilename}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary hover:text-primary/80"

@@ -1,0 +1,241 @@
+{
+  "name": "Receipt Getter",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "records/list",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "d9a7050a-1300-42e5-9167-db1023e081eb",
+      "name": "Webhook - List Records",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        160
+      ],
+      "webhookId": "records-list-webhook",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "o90kkLJZ1Wsqy6bT",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body ?? $input.first().json;\nconst source = String(body.source || '').toLowerCase();\nconst offset = Math.max(0, parseInt(body.offset ?? 0, 10) || 0);\nconst limit = Math.min(50, Math.max(1, parseInt(body.limit ?? 20, 10) || 20));\n\nconst TAB_MAP = {\n  receipt: 'Receipt',\n  email: 'Email',\n  mileage: 'Milage',\n};\n\nconst sheetName = TAB_MAP[source];\nif (!sheetName) {\n  return [{ json: { valid: false, error: 'source must be receipt, email, or mileage' } }];\n}\n\nreturn [{ json: { valid: true, source, offset, limit, sheetName } }];"
+      },
+      "id": "95baaf54-40ca-48f1-8d19-26a216362157",
+      "name": "Parse Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid-check",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "19502ac0-01e5-4164-afc4-49f8869f3293",
+      "name": "IF Valid Request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -192,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error || 'Invalid request' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "7825f723-aab8-4599-a6fc-305f7f03b189",
+      "name": "Respond 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0",
+          "mode": "list",
+          "cachedResultName": "Receipt",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $('Parse Request').first().json.sheetName }}",
+          "mode": "name"
+        },
+        "options": {
+          "dataLocationOnSheet": {
+            "values": {
+              "rangeDefinition": "specifyRange"
+            }
+          }
+        }
+      },
+      "id": "fd49bf4e-5c96-4540-846e-49764c24b7ac",
+      "name": "Google Sheets - Read Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        48,
+        80
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qjcRKIDLVJUxwBME",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const req = $('Parse Request').first().json;\nconst rows = $input.all().map((item) => item.json);\n\nfunction asString(value) {\n  if (value == null) return '';\n  return String(value).trim();\n}\n\nfunction asNumber(value, fallback = 0) {\n  const n = Number(value);\n  return Number.isFinite(n) ? n : fallback;\n}\n\nfunction excelOrIsoDate(value) {\n  const raw = asString(value);\n  if (!raw) return '';\n  if (/^\\d{4}-\\d{2}-\\d{2}/.test(raw)) return raw.slice(0, 10);\n  const serial = Number(raw);\n  if (!Number.isFinite(serial) || serial <= 0) return raw;\n  if (serial > 100000) return new Date(serial).toISOString().slice(0, 10);\n  const ms = (serial - 25569) * 86400 * 1000;\n  return new Date(ms).toISOString().slice(0, 10);\n}\n\nfunction sortKeyFromRow(row, source) {\n  if (source === 'receipt') {\n    return asString(row['Submitted At'] || row.Date);\n  }\n  if (source === 'email') {\n    return asString(row.emailTimestamp || row.submittedAt || row.internalDate || row.date);\n  }\n  return asString(row.submittedAt || row.endTime || row.date);\n}\n\nfunction mapReceiptRow(row) {\n  const submittedAt = asString(row['Submitted At']);\n  const driveLink = asString(row.link || row['Image Link']);\n  return {\n    id: submittedAt ? `receipt-${submittedAt}` : `receipt-row-${Math.random()}`,\n    status: 'success',\n    submittedAt: submittedAt || excelOrIsoDate(row.Date),\n    sheetSubmittedAt: submittedAt || undefined,\n    imageData: '',\n    extractedData: {\n      vendor: asString(row.Vendor),\n      date: excelOrIsoDate(row.Date),\n      total: asNumber(row.Total),\n      tax: asNumber(row.Tax),\n      currency: asString(row.Currency) || 'CAD',\n      category: asString(row.Category),\n      items: [],\n      itemsSummary: asString(row.Items),\n      confidence: asNumber(row.Confidence),\n      driveLink: driveLink || undefined,\n      submittedAt: submittedAt || undefined,\n    },\n  };\n}\n\nfunction mapEmailRow(row) {\n  const emailTimestamp = asString(row.emailTimestamp || row.internalDate);\n  const submittedAt = asString(row.submittedAt || row.date);\n  return {\n    id: emailTimestamp ? `email-${emailTimestamp}` : `email-row-${Math.random()}`,\n    status: 'success',\n    submittedAt: submittedAt || emailTimestamp,\n    emailTimestamp: emailTimestamp || undefined,\n    imageData: '',\n    extractedData: {\n      vendor: asString(row.vendor),\n      date: excelOrIsoDate(row.date),\n      total: asNumber(row.total),\n      tax: asNumber(row.tax),\n      currency: asString(row.currency) || 'CAD',\n      category: asString(row.category),\n      items: [],\n      itemsSummary: asString(row.items),\n      confidence: asNumber(row.confidence),\n      submittedAt: submittedAt || undefined,\n      emailTimestamp: emailTimestamp || undefined,\n      transactionType: asString(row.transactionType),\n      source: asString(row.source),\n      gmailMessageId: asString(row.gmailMessageId || row.messageId),\n      driveFilename: asString(row.driveFilename),\n    },\n  };\n}\n\nfunction mapMileageRow(row) {\n  const submittedAt = asString(row.submittedAt);\n  return {\n    id: submittedAt ? `mileage-${submittedAt}` : `mileage-row-${Math.random()}`,\n    status: 'success',\n    submittedAt: submittedAt || excelOrIsoDate(row.date),\n    sheetSubmittedAt: submittedAt || undefined,\n    startTime: asString(row.startTime),\n    endTime: asString(row.endTime),\n    startLocation: asString(row.startLocation) || undefined,\n    endLocation: asString(row.endLocation) || undefined,\n    distanceKm: asNumber(row.distanceKm),\n    businessPurpose: asString(row.businessPurpose),\n    trackingMode: asString(row.trackingMode) === 'Manual' ? 'Manual' : 'GPS',\n    deduction: asNumber(row.deduction) || undefined,\n  };\n}\n\nconst mappers = {\n  receipt: mapReceiptRow,\n  email: mapEmailRow,\n  mileage: mapMileageRow,\n};\n\nconst withSort = rows.map((row) => ({ row, key: sortKeyFromRow(row, req.source) }));\nwithSort.sort((a, b) => b.key.localeCompare(a.key));\n\nconst mapped = withSort\n  .map(({ row }) => mappers[req.source](row))\n  .filter((item) => {\n    if (req.source === 'receipt') return Boolean(item.sheetSubmittedAt || item.extractedData?.vendor);\n    if (req.source === 'email') return Boolean(item.emailTimestamp || item.extractedData?.vendor);\n    return Boolean(item.sheetSubmittedAt || item.businessPurpose);\n  });\n\nconst total = mapped.length;\nconst page = mapped.slice(req.offset, req.offset + req.limit);\nconst nextOffset = req.offset + page.length;\nconst hasMore = nextOffset < total;\n\nreturn [{\n  json: {\n    success: true,\n    source: req.source,\n    items: page,\n    total,\n    offset: req.offset,\n    limit: req.limit,\n    hasMore,\n    nextOffset: hasMore ? nextOffset : null,\n  },\n}];"
+      },
+      "id": "8f00fe24-1c2b-418e-a79b-2a49278e94fb",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a05b348f-671a-4bab-967a-0e94e750b2e6",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        528,
+        80
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - List Records": {
+      "main": [
+        [
+          {
+            "node": "Parse Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Request": {
+      "main": [
+        [
+          {
+            "node": "IF Valid Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Valid Request": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Read Rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Read Rows": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "134a6387-545b-42c7-800f-febf386e95ce",
+  "meta": {
+    "instanceId": "8db90a53deb80842662d3387b648240ddb9fed5608e8664389c2d2742164a186"
+  },
+  "id": "VRNZdXT4KWbeYRXNcP0da",
+  "tags": [
+    {
+      "updatedAt": "2026-07-01T22:25:55.368Z",
+      "createdAt": "2026-07-01T22:25:55.368Z",
+      "id": "AoiVVDzxONZkASM9",
+      "name": "records-getter"
+    }
+  ]
+}
