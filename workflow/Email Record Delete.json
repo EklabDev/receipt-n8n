@@ -1,0 +1,379 @@
+{
+  "name": "Email Record Delete",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "email/delete",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a80f88d4-64ef-4579-8edf-54024c7d3a12",
+      "name": "Webhook - Delete Email",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1440,
+        160
+      ],
+      "webhookId": "email-delete-webhook",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "o90kkLJZ1Wsqy6bT",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body ?? $input.first().json;\nconst emailTimestamp = body.emailTimestamp ? String(body.emailTimestamp).trim() : '';\n\nif (!emailTimestamp) {\n  return [{ json: { valid: false, error: 'emailTimestamp is required' } }];\n}\n\nreturn [{ json: { valid: true, emailTimestamp } }];"
+      },
+      "id": "2b975be1-c8d3-431b-8da6-0f9b7f45f275",
+      "name": "Parse Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid-check",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bd6b27c2-7d37-46f1-a76b-35e23b90a03c",
+      "name": "IF Valid Request",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -960,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error || 'Invalid request' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "8bec49ab-8dbb-4316-8c4c-3ed8d03f9cb8",
+      "name": "Respond 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -720,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0",
+          "mode": "list",
+          "cachedResultName": "Receipt",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 18670923,
+          "mode": "list",
+          "cachedResultName": "Email",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit#gid=18670923"
+        },
+        "options": {
+          "dataLocationOnSheet": {
+            "values": {
+              "rangeDefinition": "specifyRange"
+            }
+          }
+        }
+      },
+      "id": "339a0f27-e376-4234-a5fe-45f3e0179971",
+      "name": "Google Sheets - Read Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -720,
+        80
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qjcRKIDLVJUxwBME",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const req = $('Parse Request').first().json;\nconst emailTimestamp = req.emailTimestamp;\nconst rows = $('Google Sheets - Read Rows').all();\n\nlet rowNumber = -1;\n\nfor (let i = 0; i < rows.length; i++) {\n  const row = rows[i].json;\n  if (String(row['emailTimestamp'] ?? '').trim() === emailTimestamp) {\n    rowNumber = i + 2;\n    break;\n  }\n}\n\nif (rowNumber < 2) {\n  return [{ json: { found: false, error: 'Record not found in Email tab' } }];\n}\n\nreturn [{ json: { found: true, rowNumber, matchedBy: 'Email Timestamp', emailTimestamp } }];"
+      },
+      "id": "0687ff97-2321-4dfa-9b82-b15ae272e8ca",
+      "name": "Find Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "found-check",
+              "leftValue": "={{ $json.found }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3d7b6591-87db-4e5a-bd3c-0745262184e4",
+      "name": "IF Row Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error || 'Record not found' }) }}",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "id": "e4eac1b9-f4ca-49e0-92c0-a7c78e558cf7",
+      "name": "Respond 404",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "documentId": {
+          "__rl": true,
+          "value": "16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0",
+          "mode": "list",
+          "cachedResultName": "Receipt",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 18670923,
+          "mode": "list",
+          "cachedResultName": "Email",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16JLh3r3xC33bo3r6ksVBCEV9HR8iXdxWrm9vrL58yz0/edit#gid=18670923"
+        },
+        "startIndex": "={{ $('Find Row').item.json.rowNumber }}"
+      },
+      "id": "e047b13b-dc6b-4f30-8f10-a61dccdeb500",
+      "name": "Google Sheets - Delete Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "qjcRKIDLVJUxwBME",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const match = $('Find Row').first().json;\nreturn [{\n  json: {\n    success: true,\n    deleted: true,\n    rowNumber: match.rowNumber,\n    matchedBy: match.matchedBy,\n  }\n}];"
+      },
+      "id": "17693bf8-9a75-41a5-8fd1-1e20de9b6c13",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "2f3b282c-aee5-4aa1-bd5f-d89606035a1b",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Delete Email": {
+      "main": [
+        [
+          {
+            "node": "Parse Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Request": {
+      "main": [
+        [
+          {
+            "node": "IF Valid Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Valid Request": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Read Rows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Read Rows": {
+      "main": [
+        [
+          {
+            "node": "Find Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Row": {
+      "main": [
+        [
+          {
+            "node": "IF Row Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Row Found": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Delete Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 404",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Delete Row": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "7e05eaa6-b7f2-487c-ab98-aa861fd6f9c9",
+  "meta": {
+    "instanceId": "8db90a53deb80842662d3387b648240ddb9fed5608e8664389c2d2742164a186"
+  },
+  "id": "R7PNMm-meDQlg_hvTxMJE",
+  "tags": [
+    {
+      "updatedAt": "2026-07-01T18:41:10.917Z",
+      "createdAt": "2026-07-01T18:41:10.917Z",
+      "id": "ADyNnuyqwNaaMB3n",
+      "name": "email-delete"
+    }
+  ]
+}
